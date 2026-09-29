@@ -9,3 +9,16 @@ body {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+/* Soft watermark-style placeholders — hints, not filled values */
+input::placeholder,
+textarea::placeholder {
+  color: rgb(148 163 184 / 0.55);
+  font-weight: 400;
+  opacity: 1;
+}
+
+input:focus::placeholder,
+textarea:focus::placeholder {
+  color: rgb(148 163 184 / 0.28);
+}
+

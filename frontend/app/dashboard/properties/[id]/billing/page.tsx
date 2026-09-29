@@ -232,6 +232,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
                     type="number"
                     value={fieldValue(l.previous_reading as number | string)}
                     onChange={(e) => updateLine(l.unit_id, "previous_reading", e.target.value)}
+                    placeholder="0"
                     className="w-20 rounded border border-slate-200 px-2 py-1 print:border-0"
                   />
                 </td>
@@ -240,6 +241,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
                     type="number"
                     value={fieldValue(l.current_reading as number | string)}
                     onChange={(e) => updateLine(l.unit_id, "current_reading", e.target.value)}
+                    placeholder="0"
                     className="w-20 rounded border border-mt-blue/40 px-2 py-1 font-semibold print:border-0"
                   />
                 </td>
@@ -254,6 +256,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
                     type="number"
                     value={fieldValue(l.amount_paid as number | string)}
                     onChange={(e) => updateLine(l.unit_id, "amount_paid", e.target.value)}
+                    placeholder="0"
                     className="w-24 rounded border border-slate-200 px-2 py-1 print:border-0"
                   />
                 </td>
@@ -289,6 +292,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
             type="number"
             value={mainMeter}
             onChange={(e) => setMainMeter(e.target.value)}
+            placeholder="Main meter"
             className="mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
           />
           {mainMeter !== "" && (
