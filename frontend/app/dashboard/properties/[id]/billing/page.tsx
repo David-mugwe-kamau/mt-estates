@@ -379,12 +379,12 @@ export default function BillingPage({ params }: { params: { id: string } }) {
 
       <div className="flex flex-wrap items-end gap-4 print:hidden">
         <div>
-          <label className="block text-xs font-medium text-slate-600">Main meter reading</label>
+          <label className="block text-xs font-medium text-slate-600">Main meter reading (optional)</label>
           <input
             type="number"
             value={mainMeter}
             onChange={(e) => setMainMeter(e.target.value)}
-            placeholder="Main meter"
+            placeholder="Optional"
             className="mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
           />
           {mainMeter !== "" && (
