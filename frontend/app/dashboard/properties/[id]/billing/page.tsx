@@ -23,6 +23,24 @@ function toNum(v: number | string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** Empty editable cells show watermark placeholders — not painted-in zeros. */
+function linesForForm(lines: BillingLine[]): BillingLine[] {
+  return lines.map((l) => {
+    if (l.id == null) {
+      return {
+        ...l,
+        previous_reading: (l.previous_reading ? l.previous_reading : "") as unknown as number,
+        current_reading: "" as unknown as number,
+        amount_paid: "" as unknown as number,
+      };
+    }
+    return {
+      ...l,
+      amount_paid: (l.amount_paid ? l.amount_paid : "") as unknown as number,
+    };
+  });
+}
+
 export default function BillingPage({ params }: { params: { id: string } }) {
   const propertyId = Number(params.id);
   const [period, setPeriod] = useState(currentPeriod());
@@ -46,7 +64,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
     try {
       const data = await billing.get(propertyId, p, token);
       setStatement(data);
-      setLines(data.lines.map((l) => ({ ...l })));
+      setLines(linesForForm(data.lines));
       setMainMeter(data.main_meter_reading != null ? String(data.main_meter_reading) : "");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load billing");
@@ -118,18 +136,26 @@ export default function BillingPage({ params }: { params: { id: string } }) {
         propertyId,
         period,
         {
-          readings: liveLines.map((l) => ({
-            unit_id: l.unit_id,
-            previous_reading: Number(l.previous_reading),
-            current_reading: Number(l.current_reading),
-            amount_paid: Number(l.amount_paid),
-          })),
+          readings: liveLines.map((l) => {
+            const previous = toNum(l.previous_reading as number | string);
+            const currentRaw = l.current_reading as number | string;
+            const current =
+              currentRaw === "" || currentRaw === undefined || currentRaw === null
+                ? previous
+                : toNum(currentRaw);
+            return {
+              unit_id: l.unit_id,
+              previous_reading: previous,
+              current_reading: current,
+              amount_paid: toNum(l.amount_paid as number | string),
+            };
+          }),
           main_meter_reading: mainMeter === "" ? undefined : Number(mainMeter),
         },
         token,
       );
       setStatement(data);
-      setLines(data.lines.map((l) => ({ ...l })));
+      setLines(linesForForm(data.lines));
       setSuccess("Readings saved. Totals locked for this month.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed");
@@ -232,7 +258,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
                     type="number"
                     value={fieldValue(l.previous_reading as number | string)}
                     onChange={(e) => updateLine(l.unit_id, "previous_reading", e.target.value)}
-                    placeholder="0"
+                    placeholder="Initial"
                     className="w-20 rounded border border-slate-200 px-2 py-1 print:border-0"
                   />
                 </td>
@@ -241,7 +267,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
                     type="number"
                     value={fieldValue(l.current_reading as number | string)}
                     onChange={(e) => updateLine(l.unit_id, "current_reading", e.target.value)}
-                    placeholder="0"
+                    placeholder="Current"
                     className="w-20 rounded border border-mt-blue/40 px-2 py-1 font-semibold print:border-0"
                   />
                 </td>
@@ -256,7 +282,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
                     type="number"
                     value={fieldValue(l.amount_paid as number | string)}
                     onChange={(e) => updateLine(l.unit_id, "amount_paid", e.target.value)}
-                    placeholder="0"
+                    placeholder="Paid"
                     className="w-24 rounded border border-slate-200 px-2 py-1 print:border-0"
                   />
                 </td>
