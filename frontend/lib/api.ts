@@ -1,4 +1,5 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+/** Empty = same-origin Next.js API (Phase 2+ on Vercel). Set to FastAPI URL only if you still run Python locally. */
+const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
 
 async function request<T>(
   path: string,
