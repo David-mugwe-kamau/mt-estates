@@ -166,7 +166,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
         <table className="min-w-full text-left text-sm">
           <thead className="bg-slate-50 text-xs uppercase text-slate-500">
             <tr>
-              <th className="px-3 py-3">Unit</th>
+              <th className="px-3 py-3">Unit / house no.</th>
               <th className="px-3 py-3">Tenant</th>
               <th className="px-3 py-3">Initial</th>
               <th className="px-3 py-3">Current</th>
@@ -268,7 +268,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
       </div>
 
       {liveLines.length === 0 && (
-        <p className="text-sm text-slate-500">Add units on the property page first, then return here to bill.</p>
+        <p className="text-sm text-slate-500">Add units / house numbers on the property page first, then return here to bill.</p>
       )}
     </div>
   );

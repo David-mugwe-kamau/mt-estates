@@ -319,7 +319,7 @@ export default function EditPropertyPage({ params }: { params: { id: string } })
 
   const isAirbnb = property.listing_type === "airbnb";
   const priceLabel = isAirbnb ? "Price per night (KSh)" : "Monthly rent (KSh)";
-  const unitLabel = isAirbnb ? "Room / unit name" : "Unit number";
+  const unitLabel = isAirbnb ? "Room / unit / house number" : "Unit / house number";
   const publishChecks = buildPublishChecklist({
     listingType: property.listing_type,
     contactPhone: form.contact_phone || property.contact_phone,
@@ -659,7 +659,7 @@ export default function EditPropertyPage({ params }: { params: { id: string } })
         <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h2 className="text-sm font-semibold text-slate-800">Door numbers (optional) · water and occupancy</h2>
+              <h2 className="text-sm font-semibold text-slate-800">Units / house numbers (optional) · water and occupancy</h2>
             </div>
             <button
               type="button"
@@ -673,7 +673,7 @@ export default function EditPropertyPage({ params }: { params: { id: string } })
           {billingOpen && (
             <div className="space-y-4 pt-1">
               {unitList.length === 0 ? (
-                <p className="text-sm text-slate-500">No door numbers yet. Add them when you need billing.</p>
+                <p className="text-sm text-slate-500">No units / house numbers yet. Add them when you need billing.</p>
               ) : (
                 <ul className="divide-y divide-slate-100">
                   {unitList.map((u) => (
