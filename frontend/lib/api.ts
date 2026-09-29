@@ -343,6 +343,17 @@ export interface PublicListingDetail extends PublicListing {
   cover_image_id?: number | null;
 }
 
+/** Public browse/detail hit Next.js → Supabase Postgres (no Render). Auth/landlord still use FastAPI. */
+async function publicRequest<T>(path: string): Promise<T> {
+  const res = await fetch(path, { headers: { "Content-Type": "application/json" } });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Request failed" }));
+    const detail = err.detail;
+    throw new Error(typeof detail === "string" ? detail : "Request failed");
+  }
+  return res.json();
+}
+
 export const listings = {
   public: (params?: {
     listing_type?: string;
@@ -363,10 +374,10 @@ export const listings = {
       });
     }
     const query = qs.toString() ? `?${qs.toString()}` : "";
-    return request<PublicListing[]>(`/api/v1/listings${query}`);
+    return publicRequest<PublicListing[]>(`/api/public/listings${query}`);
   },
 
-  get: (id: number) => request<PublicListingDetail>(`/api/v1/listings/${id}`),
+  get: (id: number) => publicRequest<PublicListingDetail>(`/api/public/listings/${id}`),
 };
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
