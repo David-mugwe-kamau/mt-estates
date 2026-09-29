@@ -12,7 +12,25 @@ async function request<T>(
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${API_URL}${path}`, { ...options, headers });
+  const controller = new AbortController();
+  const timeoutMs = 25_000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers,
+      signal: options.signal ?? controller.signal,
+    });
+  } catch (e) {
+    if (e instanceof Error && e.name === "AbortError") {
+      throw new Error("Request timed out. Please refresh and try again.");
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (res.status === 401 && typeof window !== "undefined" && !path.includes("/auth/login")) {
     localStorage.removeItem("mt_estates_token");

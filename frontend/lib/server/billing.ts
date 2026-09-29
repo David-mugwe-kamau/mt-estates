@@ -44,15 +44,6 @@ async function ownedProperty(propertyId: number, ownerId: number) {
   return r.rows[0] || null;
 }
 
-async function tenantForUnit(unitId: number) {
-  const db = getPool();
-  const r = await db.query<{ id: number; name: string; phone: string | null }>(
-    `SELECT id, name, phone FROM tenants WHERE unit_id = $1 LIMIT 1`,
-    [unitId],
-  );
-  return r.rows[0] || null;
-}
-
 function lineFromReading(
   r: Record<string, unknown>,
   unitNumber: string,
@@ -93,25 +84,45 @@ export async function getStatement(user: AuthUser, propertyId: number, period: s
      ORDER BY unit_number`,
     [propertyId],
   );
+  const unitIds = units.rows.map((u) => u.id);
+
+  const tenantsByUnit = new Map<number, { id: number; name: string; phone: string | null }>();
+  const currentByUnit = new Map<number, Record<string, unknown>>();
+  const prevByUnit = new Map<number, { current_reading: unknown; balance: unknown }>();
+
+  if (unitIds.length) {
+    try {
+      const tenants = await db.query<{ id: number; name: string; phone: string | null; unit_id: number }>(
+        `SELECT id, name, phone, unit_id FROM tenants WHERE unit_id = ANY($1::int[])`,
+        [unitIds],
+      );
+      for (const t of tenants.rows) tenantsByUnit.set(t.unit_id, t);
+    } catch {
+      // tenants table optional / empty
+    }
+
+    const readings = await db.query(
+      `SELECT * FROM meter_readings WHERE unit_id = ANY($1::int[]) AND period = ANY($2::text[])`,
+      [unitIds, [period, prev]],
+    );
+    for (const row of readings.rows) {
+      if (row.period === period) currentByUnit.set(row.unit_id, row);
+      if (row.period === prev) prevByUnit.set(row.unit_id, row);
+    }
+  }
 
   const lines = [];
   for (const unit of units.rows) {
-    const tenant = await tenantForUnit(unit.id);
-    const existing = await db.query(
-      `SELECT * FROM meter_readings WHERE unit_id = $1 AND period = $2`,
-      [unit.id, period],
-    );
-    if (existing.rows[0]) {
-      lines.push(lineFromReading(existing.rows[0], unit.unit_number, tenant));
+    const tenant = tenantsByUnit.get(unit.id) || null;
+    const existing = currentByUnit.get(unit.id);
+    if (existing) {
+      lines.push(lineFromReading(existing, unit.unit_number, tenant));
       continue;
     }
 
-    const last = await db.query(
-      `SELECT current_reading, balance FROM meter_readings WHERE unit_id = $1 AND period = $2`,
-      [unit.id, prev],
-    );
-    const previous = last.rows[0] ? n(last.rows[0].current_reading) : 0;
-    const arrears = last.rows[0] ? n(last.rows[0].balance) : 0;
+    const last = prevByUnit.get(unit.id);
+    const previous = last ? n(last.current_reading) : 0;
+    const arrears = last ? n(last.balance) : 0;
     const rent = n(unit.rent_amount);
     const totalDue = garbage + rent;
     lines.push({

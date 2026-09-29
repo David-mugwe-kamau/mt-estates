@@ -37,6 +37,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
   async function load(p = period) {
     const token = getToken();
     if (!token) {
+      setLoading(false);
       window.location.href = `/auth/login?next=/dashboard/properties/${propertyId}/billing`;
       return;
     }
@@ -49,6 +50,8 @@ export default function BillingPage({ params }: { params: { id: string } }) {
       setMainMeter(data.main_meter_reading != null ? String(data.main_meter_reading) : "");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load billing");
+      setStatement(null);
+      setLines([]);
     } finally {
       setLoading(false);
     }
@@ -137,8 +140,30 @@ export default function BillingPage({ params }: { params: { id: string } }) {
 
   if (loading) {
     return (
-      <div className="flex min-h-[50vh] items-center justify-center">
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 px-4">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-mt-blue border-t-transparent" />
+        <p className="text-sm text-slate-500">Loading billing…</p>
+      </div>
+    );
+  }
+
+  if (!statement && error) {
+    return (
+      <div className="mx-auto max-w-lg space-y-4 px-4 py-16 text-center">
+        <p className="text-lg font-semibold text-slate-900">Could not load billing</p>
+        <p className="text-sm text-red-600">{error}</p>
+        <button
+          type="button"
+          onClick={() => load(period)}
+          className="rounded-lg bg-mt-blue px-4 py-2 text-sm font-semibold text-white"
+        >
+          Try again
+        </button>
+        <div>
+          <a href={`/dashboard/properties/${propertyId}`} className="text-sm font-medium text-mt-blue">
+            ← Back to property
+          </a>
+        </div>
       </div>
     );
   }
