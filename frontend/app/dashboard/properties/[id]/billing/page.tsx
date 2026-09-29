@@ -13,6 +13,16 @@ function currentPeriod() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function fieldValue(v: number | string): string | number {
+  return v === "" || v === undefined || v === null ? "" : v;
+}
+
+function toNum(v: number | string): number {
+  if (v === "" || v === undefined || v === null) return 0;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
 export default function BillingPage({ params }: { params: { id: string } }) {
   const propertyId = Number(params.id);
   const [period, setPeriod] = useState(currentPeriod());
@@ -53,15 +63,15 @@ export default function BillingPage({ params }: { params: { id: string } }) {
     if (!statement) return [];
     const rate = statement.water_rate_per_unit;
     return lines.map((l) => {
-      const previous = Number(l.previous_reading) || 0;
-      const current = Number(l.current_reading) || 0;
+      const previous = toNum(l.previous_reading as number | string);
+      const current = toNum(l.current_reading as number | string);
       const water_units = Math.max(0, current - previous);
       const water_cost = water_units * rate;
       const garbage_fee = Number(l.garbage_fee) || 0;
       const rent_amount = Number(l.rent_amount) || 0;
       const total_due = water_cost + garbage_fee + rent_amount;
       const arrears = Number(l.arrears) || 0;
-      const amount_paid = Number(l.amount_paid) || 0;
+      const amount_paid = toNum(l.amount_paid as number | string);
       const balance = arrears + total_due - amount_paid;
       return { ...l, water_units, water_cost, total_due, arrears, balance };
     });
@@ -85,7 +95,12 @@ export default function BillingPage({ params }: { params: { id: string } }) {
 
   function updateLine(unitId: number, field: keyof BillingLine, value: string) {
     setLines((prev) =>
-      prev.map((l) => (l.unit_id === unitId ? { ...l, [field]: value === "" ? 0 : Number(value) } : l)),
+      prev.map((l) => {
+        if (l.unit_id !== unitId) return l;
+        // Allow blank while typing so "0" does not stick in the field
+        const next = value === "" ? ("" as unknown as number) : Number(value);
+        return { ...l, [field]: next };
+      }),
     );
   }
 
@@ -190,7 +205,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
                 <td className="px-3 py-2">
                   <input
                     type="number"
-                    value={l.previous_reading}
+                    value={fieldValue(l.previous_reading as number | string)}
                     onChange={(e) => updateLine(l.unit_id, "previous_reading", e.target.value)}
                     className="w-20 rounded border border-slate-200 px-2 py-1 print:border-0"
                   />
@@ -198,7 +213,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
                 <td className="px-3 py-2">
                   <input
                     type="number"
-                    value={l.current_reading}
+                    value={fieldValue(l.current_reading as number | string)}
                     onChange={(e) => updateLine(l.unit_id, "current_reading", e.target.value)}
                     className="w-20 rounded border border-mt-blue/40 px-2 py-1 font-semibold print:border-0"
                   />
@@ -212,7 +227,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
                 <td className="px-3 py-2">
                   <input
                     type="number"
-                    value={l.amount_paid}
+                    value={fieldValue(l.amount_paid as number | string)}
                     onChange={(e) => updateLine(l.unit_id, "amount_paid", e.target.value)}
                     className="w-24 rounded border border-slate-200 px-2 py-1 print:border-0"
                   />
