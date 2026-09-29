@@ -1,0 +1,30 @@
+# MT Estates — Render Blueprint
+# Deploy: https://dashboard.render.com → New → Blueprint → connect this repo
+
+services:
+  - type: web
+    name: mt-estates-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: APP_NAME
+        value: MT Estates
+      - key: DEBUG
+        value: "false"
+      - key: API_V1_PREFIX
+        value: /api/v1
+      - key: ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "10080"
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: CORS_ORIGINS
+        sync: false
+      - key: PLATFORM_ADMIN_EMAILS
+        sync: false

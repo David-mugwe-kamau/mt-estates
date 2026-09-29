@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+@theme {
+  --color-mt-blue: #005B8E;
+  --color-mt-orange: #F47920;
+}
+
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+

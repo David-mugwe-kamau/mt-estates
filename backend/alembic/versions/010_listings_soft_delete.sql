@@ -1,0 +1,13 @@
+-- Migration 010 — soft-hide listings (unused) for safe maintenance
+-- Landlord "delete listing" hides it; only platform admin permanently deletes.
+-- Safe to re-run.
+
+ALTER TABLE properties
+  ADD COLUMN IF NOT EXISTS is_unused BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE properties
+  ADD COLUMN IF NOT EXISTS unused_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS idx_properties_unused
+  ON properties(is_unused)
+  WHERE is_unused = TRUE;
