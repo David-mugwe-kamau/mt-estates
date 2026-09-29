@@ -164,6 +164,64 @@ export default function BillingPage({ params }: { params: { id: string } }) {
     }
   }
 
+  function handleDownload() {
+    if (!liveLines.length) return;
+    const headers = [
+      "Unit / house no.",
+      "Tenant",
+      "Initial",
+      "Current",
+      "Units",
+      "Water",
+      "Garbage",
+      "Rent",
+      "Arrears",
+      "Total",
+      "Paid",
+      "Balance",
+    ];
+    const rows = liveLines.map((l) => [
+      l.unit_number,
+      l.tenant_name ?? "",
+      toNum(l.previous_reading as number | string),
+      toNum(l.current_reading as number | string),
+      l.water_units,
+      l.water_cost,
+      l.garbage_fee,
+      l.rent_amount,
+      l.arrears || 0,
+      l.total_due,
+      toNum(l.amount_paid as number | string),
+      l.balance,
+    ]);
+    rows.push([
+      "Totals",
+      "",
+      "",
+      "",
+      totals.water_units || 0,
+      totals.water_cost || 0,
+      totals.garbage_fee || 0,
+      totals.rent_amount || 0,
+      totals.arrears || 0,
+      totals.total_due || 0,
+      totals.amount_paid || 0,
+      totals.balance || 0,
+    ]);
+    const escape = (v: string | number) => {
+      const s = String(v ?? "");
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const csv = [headers, ...rows].map((row) => row.map(escape).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `billing-${propertyId}-${period}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 px-4">
@@ -214,6 +272,14 @@ export default function BillingPage({ params }: { params: { id: string } }) {
           />
           <button type="button" onClick={() => window.print()} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold">
             Print
+          </button>
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={liveLines.length === 0}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold disabled:opacity-50"
+          >
+            Download
           </button>
         </div>
       </div>
