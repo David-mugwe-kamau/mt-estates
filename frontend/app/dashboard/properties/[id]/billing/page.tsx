@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { getToken } from "@/lib/auth";
 import { billing, type BillingLine, type BillingStatement } from "@/lib/api";
 import { downloadPdfTable, asAtMonthLabel } from "@/lib/billingPdf";
-import { saveAsFile } from "@/lib/saveAsFile";
 
 function money(n: number) {
   return Number(n || 0).toLocaleString("en-KE", { maximumFractionDigits: 0 });
@@ -19,15 +18,6 @@ function shiftPeriod(period: string, delta: number) {
   const [y, m] = period.split("-").map(Number);
   const d = new Date(y, m - 1 + delta, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function downloadCsv(filename: string, headers: string[], rows: Array<Array<string | number>>) {
-  const escape = (v: string | number) => {
-    const s = String(v ?? "");
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const csv = [headers, ...rows].map((row) => row.map(escape).join(",")).join("\n");
-  saveAsFile(csv, filename);
 }
 
 function fieldValue(v: number | string): string | number {
@@ -220,60 +210,6 @@ export default function BillingPage({ params }: { params: { id: string } }) {
     return list.map((c) => `${c.label} ${money(c.amount)}`).join(" · ");
   }
 
-  function handleDownload() {
-    if (!liveLines.length) return;
-    const extraHeaders = extraCols.map((c) => c.label);
-    const headers = [
-      "Period",
-      "Unit / house no.",
-      "Tenant",
-      "Initial",
-      "Current",
-      "Units",
-      "Water",
-      "Garbage",
-      "Rent",
-      ...extraHeaders,
-      "Arrears",
-      "Total",
-      "Paid",
-      "Balance",
-    ];
-    const rows = liveLines.map((l) => [
-      period,
-      l.unit_number,
-      l.tenant_name ?? "",
-      toNum(l.previous_reading as number | string),
-      toNum(l.current_reading as number | string),
-      l.water_units,
-      l.water_cost,
-      l.garbage_fee,
-      l.rent_amount,
-      ...extraCols.map((_, i) => extraOnLine(l, i)),
-      l.arrears || 0,
-      l.total_due,
-      toNum(l.amount_paid as number | string),
-      l.balance,
-    ]);
-    rows.push([
-      "Totals",
-      "",
-      "",
-      "",
-      "",
-      totals.water_units || 0,
-      totals.water_cost || 0,
-      totals.garbage_fee || 0,
-      totals.rent_amount || 0,
-      ...extraCols.map((_, i) => liveLines.reduce((s, l) => s + extraOnLine(l, i), 0)),
-      totals.arrears || 0,
-      totals.total_due || 0,
-      totals.amount_paid || 0,
-      totals.balance || 0,
-    ]);
-    downloadCsv(`billing-${propertyId}-${period}.csv`, headers, rows);
-  }
-
   function handleDownloadPdf() {
     if (!liveLines.length) return;
     const extraHeaders = extraCols.map((c) => c.label);
@@ -354,45 +290,6 @@ export default function BillingPage({ params }: { params: { id: string } }) {
     } finally {
       setHistoryBusy(false);
     }
-  }
-
-  function handleDownloadHistory() {
-    if (!historyLines.length) return;
-    const headers = [
-      "Period",
-      "Unit / house no.",
-      "Occupancy",
-      "Tenant",
-      "Initial",
-      "Current",
-      "Units",
-      "Water",
-      "Garbage",
-      "Rent",
-      "Charges",
-      "Arrears",
-      "Total",
-      "Paid",
-      "Balance",
-    ];
-    const rows = historyLines.map((l) => [
-      l.period,
-      l.unit_number,
-      l.occupancy === "vacant" ? "Vacant" : "Occupied",
-      l.tenant_name ?? "",
-      l.previous_reading,
-      l.current_reading,
-      l.water_units,
-      l.water_cost,
-      l.garbage_fee,
-      l.rent_amount,
-      extrasNamed(l),
-      l.arrears || 0,
-      l.total_due,
-      l.amount_paid,
-      l.balance,
-    ]);
-    downloadCsv(`billing-history-${propertyId}-${historyFrom}-${historyTo}.csv`, headers, rows);
   }
 
   function handleDownloadHistoryPdf() {
@@ -484,14 +381,6 @@ export default function BillingPage({ params }: { params: { id: string } }) {
             className="rounded-lg bg-mt-blue px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
           >
             Download PDF
-          </button>
-          <button
-            type="button"
-            onClick={handleDownload}
-            disabled={liveLines.length === 0}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold disabled:opacity-50"
-          >
-            Download
           </button>
         </div>
       </div>
@@ -696,14 +585,6 @@ export default function BillingPage({ params }: { params: { id: string } }) {
             className="rounded-lg bg-mt-blue px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
           >
             Download PDF
-          </button>
-          <button
-            type="button"
-            onClick={handleDownloadHistory}
-            disabled={historyLines.length === 0}
-            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold disabled:opacity-50"
-          >
-            Download history
           </button>
         </div>
         {historyLines.length > 0 && (
