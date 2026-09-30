@@ -3,25 +3,59 @@ import autoTable from "jspdf-autotable";
 
 type Logo = { data: string; w: number; h: number };
 
-async function loadLogoJpeg(): Promise<Logo | null> {
+async function loadLogoPng(): Promise<Logo | null> {
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
       const el = new Image();
+      el.crossOrigin = "anonymous";
       el.onload = () => resolve(el);
       el.onerror = () => reject(new Error("logo"));
-      el.src = "/images/mt-estates-logo.png";
+      el.src = `${window.location.origin}/images/mt-estates-logo.png`;
     });
-    const w = Math.min(480, img.naturalWidth || 240);
-    const h = Math.round((w * (img.naturalHeight || 1)) / Math.max(1, img.naturalWidth || 1));
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return null;
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, w, h);
-    ctx.drawImage(img, 0, 0, w, h);
-    return { data: canvas.toDataURL("image/jpeg", 0.9), w, h };
+    const src = document.createElement("canvas");
+    src.width = img.naturalWidth || 1;
+    src.height = img.naturalHeight || 1;
+    const sctx = src.getContext("2d");
+    if (!sctx) return null;
+    sctx.drawImage(img, 0, 0);
+    const pix = sctx.getImageData(0, 0, src.width, src.height).data;
+    let minX = src.width;
+    let minY = src.height;
+    let maxX = 0;
+    let maxY = 0;
+    for (let y = 0; y < src.height; y++) {
+      for (let x = 0; x < src.width; x++) {
+        const i = (y * src.width + x) * 4;
+        const a = pix[i + 3];
+        const white = pix[i] > 245 && pix[i + 1] > 245 && pix[i + 2] > 245;
+        if (a > 12 && !white) {
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    const pad = 8;
+    if (maxX <= minX || maxY <= minY) {
+      minX = 0;
+      minY = 0;
+      maxX = src.width - 1;
+      maxY = src.height - 1;
+    }
+    minX = Math.max(0, minX - pad);
+    minY = Math.max(0, minY - pad);
+    maxX = Math.min(src.width - 1, maxX + pad);
+    maxY = Math.min(src.height - 1, maxY + pad);
+    const cw = maxX - minX + 1;
+    const ch = maxY - minY + 1;
+    const cropped = document.createElement("canvas");
+    cropped.width = cw;
+    cropped.height = ch;
+    const cctx = cropped.getContext("2d");
+    if (!cctx) return null;
+    cctx.drawImage(src, minX, minY, cw, ch, 0, 0, cw, ch);
+    return { data: cropped.toDataURL("image/png"), w: cw, h: ch };
   } catch {
     return null;
   }
@@ -68,40 +102,41 @@ export async function downloadPdfTable(
   });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
-  const logo = await loadLogoJpeg();
+  const logo = await loadLogoPng();
   const name = (listingName || "Statement").trim();
   const side = 12;
-  const headerH = 40;
+  const logoW = 36;
+  const logoH = logo ? logoW * (logo.h / logo.w) : 0;
+  const headerH = logo ? Math.ceil(10 + logoH + 22) : 32;
   const file = filename.endsWith(".pdf") ? filename : `${filename}.pdf`;
 
   const paintHeader = () => {
     doc.setFillColor(0, 91, 142);
-    doc.rect(0, 0, pageW, 6, "F");
-    let textX = side;
+    doc.rect(0, 0, pageW, 4, "F");
+    let y = 8;
     if (logo) {
-      const logoW = 22;
-      const logoH = logoW * (logo.h / logo.w);
       try {
-        doc.addImage(logo.data, "JPEG", side, 10, logoW, logoH);
+        doc.addImage(logo.data, "PNG", (pageW - logoW) / 2, y, logoW, logoH);
       } catch {
-        // keep the typed letterhead if the image cannot embed
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(14);
+        doc.setTextColor(0, 91, 142);
+        doc.text("MT ESTATES", pageW / 2, y + 8, { align: "center" });
       }
-      textX = side + logoW + 5;
+      y += logoH + 6;
     }
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(8);
-    doc.setTextColor(0, 91, 142);
-    doc.text("MT ESTATES", textX, 14);
     doc.setFontSize(13);
     doc.setTextColor(15, 23, 42);
-    doc.text(name, textX, 21, { maxWidth: pageW - textX - side });
+    doc.text(name, pageW / 2, y, { align: "center", maxWidth: pageW - side * 2 });
+    y += 6;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
     doc.setTextColor(71, 85, 105);
-    if (asAt) doc.text(asAt, textX, 28);
+    if (asAt) doc.text(asAt, pageW / 2, y, { align: "center" });
     doc.setDrawColor(0, 91, 142);
     doc.setLineWidth(0.45);
-    doc.line(side, 34, pageW - side, 34);
+    doc.line(side, headerH - 4, pageW - side, headerH - 4);
   };
 
   const paintFooter = (page: number) => {
