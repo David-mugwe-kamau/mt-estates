@@ -48,6 +48,26 @@ function openingArrears(
   return balance;
 }
 
+function stampedName(row: Record<string, unknown> | undefined, fallback: string | null): string | null {
+  const saved = row?.tenant_name != null ? String(row.tenant_name).trim() : "";
+  if (saved) return saved;
+  const next = fallback != null ? String(fallback).trim() : "";
+  return next || null;
+}
+
+let tenantNameColumnReady = false;
+async function ensureTenantNameColumn() {
+  if (tenantNameColumnReady) return;
+  try {
+    await getPool().query(
+      `ALTER TABLE meter_readings ADD COLUMN IF NOT EXISTS tenant_name VARCHAR(200)`,
+    );
+  } catch {
+    // column may already exist or role cannot ALTER; reads still work without it
+  }
+  tenantNameColumnReady = true;
+}
+
 async function ownedProperty(propertyId: number, ownerId: number) {
   const db = getPool();
   const r = await db.query<{
@@ -85,7 +105,7 @@ function lineFromReading(
     unit_number: unitNumber,
     occupancy,
     tenant_id: tenant?.id ?? null,
-    tenant_name: tenant?.name ?? null,
+    tenant_name: stampedName(r, tenant?.name ?? null),
     tenant_phone: tenant?.phone ?? null,
     period: String(r.period),
     previous_reading: previous,
@@ -103,6 +123,7 @@ function lineFromReading(
 
 export async function getStatement(user: AuthUser, propertyId: number, period: string) {
   period = normalizePeriod(period);
+  await ensureTenantNameColumn();
   const prop = await ownedProperty(propertyId, user.id);
   if (!prop) return null;
   const db = getPool();
@@ -167,7 +188,7 @@ export async function getStatement(user: AuthUser, propertyId: number, period: s
       unit_number: unit.unit_number,
       occupancy,
       tenant_id: tenant?.id ?? null,
-      tenant_name: tenant?.name ?? null,
+      tenant_name: stampedName(last, tenant?.name ?? null),
       tenant_phone: tenant?.phone ?? null,
       period,
       previous_reading: previous,
@@ -217,6 +238,7 @@ export async function getHistory(user: AuthUser, propertyId: number, fromRaw: st
     from = to;
     to = tmp;
   }
+  await ensureTenantNameColumn();
   const prop = await ownedProperty(propertyId, user.id);
   if (!prop) return null;
   const db = getPool();
@@ -265,11 +287,13 @@ export async function upsertReadings(
       previous_reading?: number;
       current_reading: number;
       amount_paid?: number;
+      tenant_name?: string | null;
     }>;
     main_meter_reading?: number;
   },
 ) {
   period = normalizePeriod(period);
+  await ensureTenantNameColumn();
   const prop = await ownedProperty(propertyId, user.id);
   if (!prop) return null;
   const db = getPool();
@@ -302,7 +326,7 @@ export async function upsertReadings(
       const occupied = unit.rows[0].status === "occupied";
 
       const last = await client.query(
-        `SELECT current_reading, balance, rent_amount, garbage_fee
+        `SELECT current_reading, balance, rent_amount, garbage_fee, tenant_name
          FROM meter_readings WHERE unit_id = $1 AND period = $2`,
         [unit.rows[0].id, prev],
       );
@@ -340,11 +364,16 @@ export async function upsertReadings(
       }
       const balance = arrears + totalDue - amountPaid;
 
+      const tenantName =
+        item.tenant_name != null && String(item.tenant_name).trim()
+          ? String(item.tenant_name).trim().slice(0, 200)
+          : null;
+
       await client.query(
         `INSERT INTO meter_readings (
            unit_id, period, previous_reading, current_reading, water_units, water_cost,
-           garbage_fee, rent_amount, total_due, arrears, amount_paid, balance
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+           garbage_fee, rent_amount, total_due, arrears, amount_paid, balance, tenant_name
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
          ON CONFLICT (unit_id, period) DO UPDATE SET
            previous_reading = EXCLUDED.previous_reading,
            current_reading = EXCLUDED.current_reading,
@@ -355,7 +384,8 @@ export async function upsertReadings(
            total_due = EXCLUDED.total_due,
            arrears = EXCLUDED.arrears,
            amount_paid = EXCLUDED.amount_paid,
-           balance = EXCLUDED.balance`,
+           balance = EXCLUDED.balance,
+           tenant_name = EXCLUDED.tenant_name`,
         [
           unit.rows[0].id,
           period,
@@ -369,6 +399,7 @@ export async function upsertReadings(
           arrears,
           amountPaid,
           balance,
+          tenantName,
         ],
       );
     }

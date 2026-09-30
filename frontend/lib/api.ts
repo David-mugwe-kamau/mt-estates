@@ -527,6 +527,7 @@ export const billing = {
         previous_reading?: number;
         current_reading: number;
         amount_paid?: number;
+        tenant_name?: string | null;
       }>;
       main_meter_reading?: number;
     },

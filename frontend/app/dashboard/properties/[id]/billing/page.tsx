@@ -145,7 +145,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
     setLines((prev) =>
       prev.map((l) => {
         if (l.unit_id !== unitId) return l;
-        // Allow blank while typing so "0" does not stick in the field
+        if (field === "tenant_name") return { ...l, tenant_name: value };
         const next = value === "" ? ("" as unknown as number) : Number(value);
         return { ...l, [field]: next };
       }),
@@ -175,6 +175,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
               previous_reading: previous,
               current_reading: current,
               amount_paid: toNum(l.amount_paid as number | string),
+              tenant_name: (l.tenant_name || "").trim() || null,
             };
           }),
           main_meter_reading: mainMeter === "" ? undefined : Number(mainMeter),
@@ -398,8 +399,14 @@ export default function BillingPage({ params }: { params: { id: string } }) {
                     <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Vacant</span>
                   ) : null}
                 </td>
-                <td className="px-3 py-2 text-slate-600">
-                  {l.tenant_name ? l.tenant_name : <span className="text-slate-300">—</span>}
+                <td className="px-3 py-2">
+                  <input
+                    type="text"
+                    value={l.tenant_name ?? ""}
+                    onChange={(e) => updateLine(l.unit_id, "tenant_name", e.target.value)}
+                    placeholder="Tenant name"
+                    className="w-36 rounded border border-slate-200 px-2 py-1 print:border-0"
+                  />
                 </td>
                 <td className="px-3 py-2">
                   <input
