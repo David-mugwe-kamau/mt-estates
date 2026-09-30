@@ -1,5 +1,13 @@
 import { NextRequest } from "next/server";
 import { getPool, jsonError } from "@/lib/server/db";
+import { passwordIssue } from "@/lib/passwordPolicy";
+import { clearSessionCookieHeader, sessionCookieHeader } from "@/lib/server/sessionCookie";
+import {
+  assertLoginAllowed,
+  recordLoginFailure,
+  recordLoginSuccess,
+  throttleKey,
+} from "@/lib/server/authThrottle";
 import {
   buildUserMeResponse,
   buildUserResponse,
@@ -41,7 +49,8 @@ export async function registerHandler(req: NextRequest) {
     const hostAirbnb = Boolean(body.host_airbnb);
 
     if (!name || !email || !password) return jsonError("Name, email and password are required", 400);
-    if (password.length < 8) return jsonError("Password must be at least 8 characters", 400);
+    const weak = passwordIssue(password, email, name);
+    if (weak) return jsonError(weak, 400);
 
     const db = getPool();
     const exists = await db.query(`SELECT id FROM users WHERE email = $1`, [email]);
@@ -68,6 +77,9 @@ export async function loginHandler(req: NextRequest) {
     const body = await req.json();
     const email = String(body.email || "").trim().toLowerCase();
     const password = String(body.password || "");
+    const key = await throttleKey(req, email);
+    const locked = await assertLoginAllowed(key);
+    if (locked) return jsonError(locked, 429);
     const db = getPool();
     const r = await db.query<AuthUser & { password_hash: string }>(
       `SELECT id, name, email, phone, avatar_url, role, created_at::text AS created_at, password_hash
@@ -76,16 +88,20 @@ export async function loginHandler(req: NextRequest) {
     );
     const row = r.rows[0];
     if (!row || !(await verifyPassword(password, row.password_hash))) {
+      await recordLoginFailure(key);
       return jsonError("Invalid email or password", 401);
     }
+    await recordLoginSuccess(key);
     const { password_hash: _, ...user } = row;
     const roles = await getRoleNames(user.id);
     const access_token = await createAccessToken(user.id, roles);
-    return Response.json({
-      access_token,
-      token_type: "bearer",
-      user: await buildUserResponse(user),
-    });
+    return Response.json(
+      {
+        token_type: "bearer",
+        user: await buildUserResponse(user),
+      },
+      { headers: { "Set-Cookie": sessionCookieHeader(access_token) } },
+    );
   } catch (e) {
     return jsonError(e instanceof Error ? e.message : "Login failed", 500);
   }
@@ -124,4 +140,43 @@ export async function updateMeHandler(req: NextRequest) {
   } catch (e) {
     return jsonError(e instanceof Error ? e.message : "Update failed", 500);
   }
+}
+
+export async function changePasswordHandler(req: NextRequest) {
+  const user = await requireUser(req);
+  if (!isAuthUser(user)) return user;
+  try {
+    const body = await req.json();
+    const current = String(body.current_password || "");
+    const next = String(body.new_password || "");
+    const db = getPool();
+    const r = await db.query<{ password_hash: string; email: string; name: string }>(
+      `SELECT password_hash, email, name FROM users WHERE id = $1`,
+      [user.id],
+    );
+    const row = r.rows[0];
+    if (!row || !(await verifyPassword(current, row.password_hash))) {
+      return jsonError("Current password is incorrect", 400);
+    }
+    const weak = passwordIssue(next, row.email, row.name);
+    if (weak) return jsonError(weak, 400);
+    if (current === next) return jsonError("Choose a different new password", 400);
+    const passwordHash = await hashPassword(next);
+    await db.query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [passwordHash, user.id]);
+    const roles = await getRoleNames(user.id);
+    const access_token = await createAccessToken(user.id, roles);
+    return Response.json(
+      { message: "Password updated" },
+      { headers: { "Set-Cookie": sessionCookieHeader(access_token) } },
+    );
+  } catch (e) {
+    return jsonError(e instanceof Error ? e.message : "Could not change password", 500);
+  }
+}
+
+export async function logoutHandler() {
+  return new Response(null, {
+    status: 204,
+    headers: { "Set-Cookie": clearSessionCookieHeader() },
+  });
 }

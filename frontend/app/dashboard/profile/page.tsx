@@ -5,6 +5,8 @@ import { getToken, saveSession, getUser } from "@/lib/auth";
 import { auth } from "@/lib/api";
 import type { UserResponse } from "@/lib/api";
 import { compressImageForAvatar } from "@/lib/compressImage";
+import { PasswordInput } from "@/components/PasswordInput";
+import { passwordIssue } from "@/lib/passwordPolicy";
 
 export default function ProfilePage() {
   const [user, setUser] = useState<UserResponse | null>(null);
@@ -13,6 +15,9 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
+  const [pw, setPw] = useState({ current_password: "", new_password: "", confirm: "" });
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwOk, setPwOk] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -79,6 +84,36 @@ export default function ProfilePage() {
       setError(err instanceof Error ? err.message : "Could not save changes. Please try again.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handlePassword(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setPwOk(false);
+    const token = getToken();
+    if (!token) return;
+    if (pw.new_password !== pw.confirm) {
+      setError("New passwords do not match.");
+      return;
+    }
+    const weak = passwordIssue(pw.new_password, user?.email || "", form.name);
+    if (weak) {
+      setError(weak);
+      return;
+    }
+    setPwSaving(true);
+    try {
+      await auth.changePassword(
+        { current_password: pw.current_password, new_password: pw.new_password },
+        token,
+      );
+      setPw({ current_password: "", new_password: "", confirm: "" });
+      setPwOk(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not change password.");
+    } finally {
+      setPwSaving(false);
     }
   }
 
@@ -187,6 +222,55 @@ export default function ProfilePage() {
             className="w-full rounded-lg bg-mt-blue px-4 py-3 text-sm font-semibold text-white transition hover:bg-mt-blue/90 disabled:opacity-60"
           >
             {saving ? "Saving…" : "Save changes"}
+          </button>
+        </form>
+      </div>
+
+      <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100 space-y-4">
+        <h2 className="text-sm font-semibold text-slate-800">Change password</h2>
+        {pwOk && (
+          <div className="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700 ring-1 ring-green-200">
+            Password updated.
+          </div>
+        )}
+        <form onSubmit={handlePassword} className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-600">Current password</label>
+            <PasswordInput
+              name="current_password"
+              value={pw.current_password}
+              onChange={(e) => setPw((p) => ({ ...p, current_password: e.target.value }))}
+              required
+              autoComplete="current-password"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600">New password</label>
+            <PasswordInput
+              name="new_password"
+              value={pw.new_password}
+              onChange={(e) => setPw((p) => ({ ...p, new_password: e.target.value }))}
+              required
+              placeholder="8+ characters, letters and a number"
+              autoComplete="new-password"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600">Confirm new password</label>
+            <PasswordInput
+              name="confirm"
+              value={pw.confirm}
+              onChange={(e) => setPw((p) => ({ ...p, confirm: e.target.value }))}
+              required
+              autoComplete="new-password"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={pwSaving}
+            className="w-full rounded-lg border border-mt-blue px-4 py-2.5 text-sm font-semibold text-mt-blue hover:bg-mt-blue hover:text-white disabled:opacity-60"
+          >
+            {pwSaving ? "Updating…" : "Update password"}
           </button>
         </form>
       </div>

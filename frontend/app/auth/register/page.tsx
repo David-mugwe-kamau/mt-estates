@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { auth } from "@/lib/api";
 import { saveSession } from "@/lib/auth";
 import { PasswordInput } from "@/components/PasswordInput";
+import { passwordIssue } from "@/lib/passwordPolicy";
 
 export default function RegisterPage() {
   const [form, setForm] = useState({
@@ -37,8 +38,9 @@ export default function RegisterPage() {
       setError("Passwords do not match.");
       return;
     }
-    if (form.password.length < 8) {
-      setError("Password must be at least 8 characters.");
+    const weak = passwordIssue(form.password, form.email, form.name);
+    if (weak) {
+      setError(weak);
       return;
     }
     setLoading(true);
@@ -53,7 +55,7 @@ export default function RegisterPage() {
       });
       // Auto-login after register
       const loginRes = await auth.login({ email: form.email, password: form.password });
-      saveSession(loginRes.access_token, loginRes.user);
+      saveSession(loginRes.access_token || "cookie", loginRes.user);
       window.dispatchEvent(new Event("mt_auth_change"));
       window.location.href = nextUrl;
     } catch (err: unknown) {
@@ -131,7 +133,7 @@ export default function RegisterPage() {
               value={form.password}
               onChange={handleChange}
               required
-              placeholder="At least 6 characters"
+              placeholder="At least 8 characters, letters and a number"
               autoComplete="new-password"
             />
           </div>

@@ -10,7 +10,7 @@ async function request<T>(
     "Content-Type": "application/json",
     ...(options.headers as Record<string, string>),
   };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (token && token !== "cookie") headers["Authorization"] = `Bearer ${token}`;
 
   const controller = new AbortController();
   const timeoutMs = 25_000;
@@ -21,6 +21,7 @@ async function request<T>(
     res = await fetch(`${API_URL}${path}`, {
       ...options,
       headers,
+      credentials: "include",
       signal: options.signal ?? controller.signal,
     });
   } catch (e) {
@@ -65,7 +66,7 @@ export interface UserResponse {
 }
 
 export interface LoginResponse {
-  access_token: string;
+  access_token?: string;
   token_type: string;
   user: UserResponse;
 }
@@ -84,6 +85,11 @@ export const auth = {
     request<LoginResponse>("/api/v1/auth/login", { method: "POST", body: JSON.stringify(data) }),
 
   me: (token: string) => request<UserResponse>("/api/v1/auth/me", {}, token),
+
+  logout: () => request<void>("/api/v1/auth/logout", { method: "POST" }),
+
+  changePassword: (data: { current_password: string; new_password: string }, token: string) =>
+    request<{ message: string }>("/api/v1/auth/password", { method: "POST", body: JSON.stringify(data) }, token),
 
   updateProfile: (
     data: { name?: string; phone?: string; avatar_url?: string },

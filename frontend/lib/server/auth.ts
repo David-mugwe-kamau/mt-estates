@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { SignJWT, jwtVerify } from "jose";
 import { getPool, jsonError } from "@/lib/server/db";
+import { tokenFromRequest } from "@/lib/server/sessionCookie";
 
 function secretKey() {
   const key = process.env.SECRET_KEY;
@@ -14,7 +15,7 @@ function expireMinutes() {
 }
 
 export async function hashPassword(plain: string): Promise<string> {
-  return bcrypt.hash(plain, 10);
+  return bcrypt.hash(plain, 12);
 }
 
 export async function verifyPassword(plain: string, hash: string): Promise<boolean> {
@@ -82,8 +83,7 @@ export async function buildUserMeResponse(user: AuthUser) {
 }
 
 export async function requireUser(req: Request): Promise<AuthUser | Response> {
-  const header = req.headers.get("authorization") || "";
-  const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+  const token = tokenFromRequest(req);
   if (!token) return jsonError("Not authenticated", 401);
   try {
     const payload = await decodeAccessToken(token);

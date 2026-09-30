@@ -27,7 +27,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const res = await auth.login({ email: form.email, password: form.password });
-      saveSession(res.access_token, res.user);
+      saveSession(res.access_token || "cookie", res.user);
       window.dispatchEvent(new Event("mt_auth_change"));
       window.location.href = nextUrl;
     } catch (err: unknown) {

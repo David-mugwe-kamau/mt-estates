@@ -3,15 +3,18 @@
 const TOKEN_KEY = "mt_estates_token";
 const USER_KEY = "mt_estates_user";
 
-export function saveSession(token: string, user: object) {
+export function saveSession(_token: string, user: object) {
   if (typeof window === "undefined") return;
-  localStorage.setItem(TOKEN_KEY, token);
+  localStorage.removeItem(TOKEN_KEY);
   localStorage.setItem(USER_KEY, JSON.stringify(user));
 }
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem(TOKEN_KEY);
+  const t = localStorage.getItem(TOKEN_KEY);
+  if (t) return t;
+  if (localStorage.getItem(USER_KEY)) return "cookie";
+  return null;
 }
 
 export function getUser<T = { name: string; email: string; roles: string[] }>(): T | null {
@@ -31,8 +34,10 @@ export function isLoggedIn(): boolean {
 
 export function logout() {
   if (typeof window === "undefined") return;
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
-  window.dispatchEvent(new Event("mt_auth_change"));
-  window.location.href = "/auth/login";
+  fetch("/api/v1/auth/logout", { method: "POST", credentials: "include" }).finally(() => {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+    window.dispatchEvent(new Event("mt_auth_change"));
+    window.location.href = "/auth/login";
+  });
 }
