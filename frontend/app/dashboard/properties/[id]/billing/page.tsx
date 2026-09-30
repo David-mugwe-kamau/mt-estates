@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getToken } from "@/lib/auth";
 import { billing, type BillingLine, type BillingStatement } from "@/lib/api";
-import { downloadPdfTable } from "@/lib/billingPdf";
+import { downloadPdfTable, asAtMonthLabel } from "@/lib/billingPdf";
 
 function money(n: number) {
   return Number(n || 0).toLocaleString("en-KE", { maximumFractionDigits: 0 });
@@ -77,6 +77,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
   const [historyFrom, setHistoryFrom] = useState(shiftPeriod(now, -5));
   const [historyTo, setHistoryTo] = useState(now);
   const [historyLines, setHistoryLines] = useState<BillingLine[]>([]);
+  const [historyName, setHistoryName] = useState("");
   const [historyBusy, setHistoryBusy] = useState(false);
 
   async function load(p = period) {
@@ -329,13 +330,10 @@ export default function BillingPage({ params }: { params: { id: string } }) {
       money(totals.amount_paid || 0),
       money(totals.balance || 0),
     ]);
-    const extrasNote = extraCols.length
-      ? extraCols.map((c) => `${c.label} KSh ${money(c.amount)}`).join(" · ")
-      : "No extra charges";
-    downloadPdfTable(
+    void downloadPdfTable(
       `billing-${propertyId}-${period}.pdf`,
-      "MT Estates billing",
-      `Period ${period} · Water KSh ${money(statement?.water_rate_per_unit || 0)}/unit · Garbage KSh ${money(statement?.garbage_fee || 0)} · ${extrasNote}`,
+      statement?.property_name || "Billing",
+      asAtMonthLabel(period),
       headers,
       rows,
     );
@@ -349,6 +347,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
     try {
       const data = await billing.history(propertyId, historyFrom, historyTo, token);
       setHistoryLines(data.lines);
+      setHistoryName(data.property_name || statement?.property_name || "");
       if (!data.lines.length) {
         setSuccess("No saved months in that range. Save a month first, then search history.");
       } else {
@@ -423,10 +422,10 @@ export default function BillingPage({ params }: { params: { id: string } }) {
       money(l.amount_paid),
       money(l.balance),
     ]);
-    downloadPdfTable(
+    void downloadPdfTable(
       `billing-history-${propertyId}-${historyFrom}-${historyTo}.pdf`,
-      "MT Estates billing history",
-      `Saved months ${historyFrom} to ${historyTo}`,
+      historyName || statement?.property_name || "Billing",
+      asAtMonthLabel(historyTo),
       headers,
       rows,
     );

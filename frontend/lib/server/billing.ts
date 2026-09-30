@@ -79,12 +79,13 @@ async function ownedProperty(propertyId: number, ownerId: number) {
   const db = getPool();
   const r = await db.query<{
     id: number;
+    name: string;
     water_rate_per_unit: unknown;
     garbage_fee: unknown;
     extra_charges: unknown;
     main_meter_reading: unknown;
   }>(
-    `SELECT id, water_rate_per_unit, garbage_fee, extra_charges, main_meter_reading
+    `SELECT id, name, water_rate_per_unit, garbage_fee, extra_charges, main_meter_reading
      FROM properties
      WHERE id = $1 AND owner_id = $2 AND COALESCE(is_unused, false) = false`,
     [propertyId, ownerId],
@@ -231,6 +232,7 @@ export async function getStatement(user: AuthUser, propertyId: number, period: s
 
   return {
     property_id: propertyId,
+    property_name: prop.name,
     period,
     water_rate_per_unit: waterRate,
     garbage_fee: garbage,
@@ -302,7 +304,7 @@ export async function getHistory(user: AuthUser, propertyId: number, fromRaw: st
     return lineFromReading(r, String(r.unit_number), tenant, occupancy);
   });
 
-  return { from, to, lines, totals: totals(lines) };
+  return { from, to, property_name: prop.name, lines, totals: totals(lines) };
 }
 
 export async function upsertReadings(

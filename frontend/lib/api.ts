@@ -507,6 +507,7 @@ export interface BillingLine {
 
 export interface BillingStatement {
   property_id: number;
+  property_name?: string;
   period: string;
   water_rate_per_unit: number;
   garbage_fee: number;
@@ -520,6 +521,7 @@ export interface BillingStatement {
 export interface BillingHistory {
   from: string;
   to: string;
+  property_name?: string;
   lines: BillingLine[];
   totals: Record<string, number>;
 }
