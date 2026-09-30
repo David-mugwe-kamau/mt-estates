@@ -33,7 +33,7 @@ export default function EditPropertyPage({ params }: { params: { id: string } })
   const [newUnit, setNewUnit] = useState({ unit_number: "", rent_amount: "", unit_type_id: "" });
   const [newType, setNewType] = useState({ category: "one_bedroom", custom_label: "", rent: "" });
   const [editingUnitId, setEditingUnitId] = useState<number | null>(null);
-  const [editUnit, setEditUnit] = useState({ unit_number: "", rent_amount: "" });
+  const [editUnit, setEditUnit] = useState({ unit_number: "", rent_amount: "", status: "vacant" });
   const [billingOpen, setBillingOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -250,7 +250,11 @@ export default function EditPropertyPage({ params }: { params: { id: string } })
 
   function startEditUnit(u: UnitResponse) {
     setEditingUnitId(u.id);
-    setEditUnit({ unit_number: u.unit_number, rent_amount: String(u.rent_amount) });
+    setEditUnit({
+      unit_number: u.unit_number,
+      rent_amount: String(u.rent_amount),
+      status: u.status === "occupied" ? "occupied" : "vacant",
+    });
     setError("");
   }
 
@@ -263,6 +267,7 @@ export default function EditPropertyPage({ params }: { params: { id: string } })
         {
           unit_number: editUnit.unit_number,
           rent_amount: Number(editUnit.rent_amount),
+          status: editUnit.status,
         },
         token,
       );
@@ -271,6 +276,22 @@ export default function EditPropertyPage({ params }: { params: { id: string } })
       setSuccess("Unit updated.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not update unit");
+    }
+  }
+
+  async function handleUnitOccupancy(unitId: number, status: "vacant" | "occupied") {
+    const token = getToken();
+    if (!token) return;
+    try {
+      const updated = await units.update(unitId, { status }, token);
+      setUnitList((prev) => prev.map((u) => (u.id === unitId ? updated : u)));
+      setSuccess(
+        status === "occupied"
+          ? "Marked occupied for your records. Public listing still follows type vacancy above."
+          : "Marked vacant for your records.",
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update occupancy");
     }
   }
 
@@ -660,6 +681,9 @@ export default function EditPropertyPage({ params }: { params: { id: string } })
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-sm font-semibold text-slate-800">Units / house numbers (optional) · water and occupancy</h2>
+              <p className="text-xs text-slate-500">
+                Occupied / vacant here is for your management only. What tenants see is Vacant / No vacancy on the type above.
+              </p>
             </div>
             <button
               type="button"
@@ -692,6 +716,14 @@ export default function EditPropertyPage({ params }: { params: { id: string } })
                             onChange={(e) => setEditUnit((p) => ({ ...p, rent_amount: e.target.value }))}
                             className="w-36 rounded-lg border border-slate-200 px-3 py-2 text-sm"
                           />
+                          <select
+                            value={editUnit.status}
+                            onChange={(e) => setEditUnit((p) => ({ ...p, status: e.target.value }))}
+                            className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                          >
+                            <option value="vacant">Vacant</option>
+                            <option value="occupied">Occupied</option>
+                          </select>
                           <button
                             type="button"
                             onClick={() => handleSaveUnit(u.id)}
@@ -720,9 +752,27 @@ export default function EditPropertyPage({ params }: { params: { id: string } })
                               KSh {Number(u.rent_amount).toLocaleString()}
                               {isAirbnb ? " / night" : " / mo"}
                             </span>
-                            <span className={`text-xs ${u.status === "vacant" ? "text-green-600" : "text-slate-400"}`}>
-                              {u.status}
+                            <span className={`text-xs font-semibold ${u.status === "vacant" ? "text-green-600" : "text-slate-600"}`}>
+                              {u.status === "occupied" ? "Occupied" : "Vacant"}
                             </span>
+                            <button
+                              type="button"
+                              onClick={() => handleUnitOccupancy(u.id, "vacant")}
+                              className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${
+                                u.status !== "occupied" ? "bg-green-600 text-white" : "bg-slate-100 text-slate-600"
+                              }`}
+                            >
+                              Vacant
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleUnitOccupancy(u.id, "occupied")}
+                              className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${
+                                u.status === "occupied" ? "bg-slate-700 text-white" : "bg-slate-100 text-slate-600"
+                              }`}
+                            >
+                              Occupied
+                            </button>
                           </div>
                           <div className="flex gap-2">
                             <button

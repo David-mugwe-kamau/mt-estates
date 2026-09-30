@@ -29,6 +29,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     let i = 1;
     for (const key of ["unit_number", "status", "rent_amount", "unit_type_id"] as const) {
       if (body[key] !== undefined) {
+        if (key === "status" && body.status !== "vacant" && body.status !== "occupied") {
+          return jsonError("Status must be vacant or occupied", 400);
+        }
         fields.push(`${key} = $${i++}`);
         values.push(body[key]);
       }
