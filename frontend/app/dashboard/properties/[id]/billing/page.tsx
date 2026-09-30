@@ -117,11 +117,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
       const vacant = l.occupancy === "vacant";
       const garbage_fee = vacant ? 0 : Number(l.garbage_fee) || 0;
       const rent_amount = vacant ? 0 : Number(l.rent_amount) || 0;
-      const extras_total = vacant
-        ? 0
-        : l.id != null
-          ? Number(l.extras_total) || 0
-          : Number(statement.extras_total) || 0;
+      const extras_total = vacant ? 0 : Number(statement.extras_total) || 0;
       const total_due = water_cost + garbage_fee + rent_amount + extras_total;
       const arrears = Number(l.arrears) || 0;
       const amount_paid = toNum(l.amount_paid as number | string);

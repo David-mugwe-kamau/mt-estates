@@ -4,7 +4,7 @@ export type ExtraCharge = { label: string; amount: number };
 
 export function parseExtraCharges(raw: unknown): ExtraCharge[] {
   let data = raw;
-  if (typeof data === "string") {
+  for (let i = 0; i < 3 && typeof data === "string"; i++) {
     try {
       data = JSON.parse(data);
     } catch {

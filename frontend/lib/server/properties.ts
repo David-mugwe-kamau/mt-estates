@@ -334,7 +334,7 @@ export async function updateOwnerProperty(
   for (const key of allowed) {
     if (key in body && body[key] !== undefined) {
       fields.push(`${key} = $${i++}`);
-      values.push(key === "extra_charges" ? JSON.stringify(parseExtraCharges(body[key])) : body[key]);
+      values.push(key === "extra_charges" ? parseExtraCharges(body[key]) : body[key]);
     }
   }
   if (!fields.length) return propBase(prop);

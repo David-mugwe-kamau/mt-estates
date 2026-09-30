@@ -187,7 +187,14 @@ export async function getStatement(user: AuthUser, propertyId: number, period: s
     const tenant = tenantsByUnit.get(unit.id) || null;
     const existing = currentByUnit.get(unit.id);
     if (existing) {
-      lines.push(lineFromReading(existing, unit.unit_number, tenant, occupancy));
+      const line = lineFromReading(existing, unit.unit_number, tenant, occupancy);
+      if (occupancy === "occupied" && extraCharges.length) {
+        line.extra_charges = extraCharges;
+        line.extras_total = extrasSum;
+        line.total_due = n(line.water_cost) + n(line.garbage_fee) + n(line.rent_amount) + extrasSum;
+        line.balance = n(line.arrears) + line.total_due - n(line.amount_paid);
+      }
+      lines.push(line);
       continue;
     }
 
@@ -429,7 +436,7 @@ export async function upsertReadings(
           amountPaid,
           balance,
           tenantName,
-          JSON.stringify(extrasSnap),
+          extrasSnap,
           extrasFee,
         ],
       );
