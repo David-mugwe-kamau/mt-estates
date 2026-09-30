@@ -1,3 +1,5 @@
+import { saveAsFile } from "@/lib/saveAsFile";
+
 function pdfEscape(text: string) {
   return text.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
 }
@@ -241,11 +243,5 @@ export async function downloadPdfTable(
   xref += `trailer << /Size ${maxId + 1} /Root 1 0 R >>\nstartxref\n${xrefPos}\n%%EOF`;
   parts.push(strBytes(xref));
 
-  const blob = new Blob([concat(parts)], { type: "application/pdf" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename.endsWith(".pdf") ? filename : `${filename}.pdf`;
-  a.click();
-  URL.revokeObjectURL(url);
+  saveAsFile(concat(parts), filename.endsWith(".pdf") ? filename : `${filename}.pdf`);
 }

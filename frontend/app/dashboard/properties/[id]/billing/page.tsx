@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { getToken } from "@/lib/auth";
 import { billing, type BillingLine, type BillingStatement } from "@/lib/api";
 import { downloadPdfTable, asAtMonthLabel } from "@/lib/billingPdf";
+import { saveAsFile } from "@/lib/saveAsFile";
 
 function money(n: number) {
   return Number(n || 0).toLocaleString("en-KE", { maximumFractionDigits: 0 });
@@ -26,13 +27,7 @@ function downloadCsv(filename: string, headers: string[], rows: Array<Array<stri
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const csv = [headers, ...rows].map((row) => row.map(escape).join(",")).join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+  saveAsFile(csv, filename);
 }
 
 function fieldValue(v: number | string): string | number {
