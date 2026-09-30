@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  transpilePackages: ["jspdf", "jspdf-autotable"],
   allowedDevOrigins: ["192.168.2.101"],
   async headers() {
     return [

@@ -1,52 +1,8 @@
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import { saveAsFile } from "@/lib/saveAsFile";
 
-function pdfEscape(text: string) {
-  return text.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
-}
-
-function toPdfText(text: string) {
-  return Array.from(String(text ?? ""))
-    .map((ch) => {
-      const c = ch.charCodeAt(0);
-      if (c >= 32 && c <= 126) return ch;
-      if (c === 160) return " ";
-      return "?";
-    })
-    .join("");
-}
-
-function strBytes(s: string) {
-  const u = new Uint8Array(s.length);
-  for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i) & 0xff;
-  return u;
-}
-
-function concat(parts: Uint8Array[]) {
-  const len = parts.reduce((n, p) => n + p.length, 0);
-  const out = new Uint8Array(len);
-  let o = 0;
-  for (const p of parts) {
-    out.set(p, o);
-    o += p.length;
-  }
-  return out;
-}
-
-function jpegSize(bytes: Uint8Array): { w: number; h: number } | null {
-  let i = 2;
-  while (i + 8 < bytes.length) {
-    if (bytes[i] !== 0xff) return null;
-    const marker = bytes[i + 1];
-    const len = (bytes[i + 2] << 8) | bytes[i + 3];
-    if (marker === 0xc0 || marker === 0xc1 || marker === 0xc2) {
-      return { h: (bytes[i + 5] << 8) | bytes[i + 6], w: (bytes[i + 7] << 8) | bytes[i + 8] };
-    }
-    i += 2 + len;
-  }
-  return null;
-}
-
-async function loadLogoJpeg(): Promise<{ bytes: Uint8Array; w: number; h: number } | null> {
+async function loadLogo(): Promise<{ header: string; watermark: string; w: number; h: number } | null> {
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
       const el = new Image();
@@ -54,29 +10,30 @@ async function loadLogoJpeg(): Promise<{ bytes: Uint8Array; w: number; h: number
       el.onerror = () => reject(new Error("logo"));
       el.src = "/images/mt-estates-logo.png";
     });
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.min(900, img.naturalWidth || 600);
-    canvas.height = Math.round((canvas.width * (img.naturalHeight || 1)) / (img.naturalWidth || 1));
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return null;
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.88);
-    const b64 = dataUrl.split(",")[1] || "";
-    const bin = atob(b64);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const size = jpegSize(bytes);
-    if (!size) return null;
-    return { bytes, w: size.w, h: size.h };
+    const w = Math.min(800, img.naturalWidth || 400);
+    const h = Math.round((w * (img.naturalHeight || 1)) / Math.max(1, img.naturalWidth || 1));
+    const header = document.createElement("canvas");
+    header.width = w;
+    header.height = h;
+    const hctx = header.getContext("2d");
+    if (!hctx) return null;
+    hctx.drawImage(img, 0, 0, w, h);
+    const mark = document.createElement("canvas");
+    mark.width = w;
+    mark.height = h;
+    const mctx = mark.getContext("2d");
+    if (!mctx) return null;
+    mctx.globalAlpha = 0.1;
+    mctx.drawImage(img, 0, 0, w, h);
+    return {
+      header: header.toDataURL("image/png"),
+      watermark: mark.toDataURL("image/png"),
+      w,
+      h,
+    };
   } catch {
     return null;
   }
-}
-
-function cellText(v: string | number, colW: number) {
-  const s = String(v ?? "");
-  const max = Math.max(8, Math.floor(colW / 4.4));
-  return s.length > max ? `${s.slice(0, max - 1)}.` : s;
 }
 
 export function asAtMonthLabel(period: string) {
@@ -112,136 +69,65 @@ export async function downloadPdfTable(
   headers: string[],
   rows: Array<Array<string | number>>,
 ) {
-  const logo = await loadLogoJpeg();
   const landscape = headers.length > 10;
-  const pageW = landscape ? 841.89 : 595.28;
-  const pageH = landscape ? 595.28 : 841.89;
-  const margin = 36;
-  const textSize = 8;
-  const rowH = 15;
-  const usable = pageW - margin * 2;
-  const colW = headers.length ? usable / headers.length : usable;
+  const doc = new jsPDF({
+    orientation: landscape ? "landscape" : "portrait",
+    unit: "mm",
+    format: "a4",
+    compress: true,
+  });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const logo = await loadLogo();
+  const name = (listingName || "Billing").trim();
 
-  const pageStreams: string[] = [];
-  let ops: string[] = [];
-
-  function text(x: number, y: number, size: number, value: string, bold = false) {
-    ops.push(
-      `BT /${bold ? "F2" : "F1"} ${size} Tf 1 0 0 1 ${x.toFixed(2)} ${y.toFixed(2)} Tm (${pdfEscape(toPdfText(value))}) Tj ET`,
-    );
-  }
-  function line(x1: number, y1: number, x2: number, y2: number) {
-    ops.push(`${x1.toFixed(2)} ${y1.toFixed(2)} m ${x2.toFixed(2)} ${y2.toFixed(2)} l S`);
-  }
-
-  function drawLogos() {
-    if (!logo) return;
-    const wmW = Math.min(320, pageW * 0.42);
-    const wmH = (wmW * logo.h) / logo.w;
-    const wmX = (pageW - wmW) / 2;
-    const wmY = (pageH - wmH) / 2;
-    ops.push("q /GS1 gs");
-    ops.push(`${wmW.toFixed(2)} 0 0 ${wmH.toFixed(2)} ${wmX.toFixed(2)} ${wmY.toFixed(2)} cm /Im1 Do Q`);
-    const hdW = 88;
-    const hdH = (hdW * logo.h) / logo.w;
-    const hdX = (pageW - hdW) / 2;
-    const hdY = pageH - margin - hdH + 6;
-    ops.push("q /GS2 gs");
-    ops.push(`${hdW.toFixed(2)} 0 0 ${hdH.toFixed(2)} ${hdX.toFixed(2)} ${hdY.toFixed(2)} cm /Im1 Do Q`);
-  }
-
-  function tableHeader(y: number) {
-    line(margin, y + 11, pageW - margin, y + 11);
-    headers.forEach((h, i) => text(margin + i * colW + 2, y, textSize, cellText(h, colW), true));
-    line(margin, y + 11 - rowH, pageW - margin, y + 11 - rowH);
-    return y - rowH;
-  }
-
-  function flush() {
-    pageStreams.push(`0.4 w\n${ops.join("\n")}\n`);
-    ops = [];
-  }
-
-  function startPage(first: boolean) {
-    drawLogos();
-    let y = pageH - margin - (logo ? 78 : 18);
-    const name = listingName.trim() || "Billing";
-    const nameSize = first ? 16 : 12;
-    text(margin, y, nameSize, name, true);
-    y -= first ? 20 : 16;
-    if (asAt) {
-      text(margin, y, first ? 11 : 9, asAt);
-      y -= first ? 22 : 16;
-    } else {
-      y -= 8;
+  const paintBranding = () => {
+    if (logo) {
+      const ratio = logo.h / logo.w;
+      const wmW = Math.min(110, pageW * 0.45);
+      const wmH = wmW * ratio;
+      doc.addImage(logo.watermark, "PNG", (pageW - wmW) / 2, (pageH - wmH) / 2, wmW, wmH);
+      const hdW = 28;
+      const hdH = hdW * ratio;
+      doc.addImage(logo.header, "PNG", (pageW - hdW) / 2, 8, hdW, hdH);
     }
-    return tableHeader(y);
-  }
+    doc.setTextColor(15, 23, 42);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.text(name, 14, logo ? 32 : 18, { maxWidth: pageW - 28 });
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    if (asAt) doc.text(asAt, 14, logo ? 40 : 26);
+  };
 
-  let y = startPage(true);
-  for (const row of rows) {
-    if (y < margin + rowH + 8) {
-      flush();
-      y = startPage(false);
-    }
-    row.forEach((cell, i) => text(margin + i * colW + 2, y, textSize, cellText(cell, colW)));
-    y -= rowH;
-  }
-  line(margin, y + 11, pageW - margin, y + 11);
-  flush();
+  autoTable(doc, {
+    head: [headers.map((h) => String(h))],
+    body: rows.map((row) => row.map((c) => String(c ?? ""))),
+    startY: logo ? 46 : 32,
+    margin: { top: logo ? 46 : 32, left: 10, right: 10, bottom: 12 },
+    styles: {
+      font: "helvetica",
+      fontSize: landscape ? 7 : 8,
+      cellPadding: 1.4,
+      overflow: "linebreak",
+      valign: "middle",
+    },
+    headStyles: {
+      fillColor: [0, 91, 142],
+      textColor: 255,
+      fontStyle: "bold",
+      fontSize: landscape ? 7 : 8,
+    },
+    footStyles: {
+      fillColor: [241, 245, 249],
+      textColor: [15, 23, 42],
+      fontStyle: "bold",
+    },
+    willDrawPage: () => {
+      paintBranding();
+    },
+  });
 
-  const n = pageStreams.length;
-  const font1 = 3;
-  const font2 = 4;
-  const gsFaint = 5;
-  const gsHeader = 6;
-  const imgId = logo ? 7 : 0;
-  const firstContent = logo ? 8 : 7;
-  const objs: Array<string | Uint8Array> = [];
-  objs[1] = "<< /Type /Catalog /Pages 2 0 R >>";
-  objs[font1] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
-  objs[font2] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>";
-  objs[gsFaint] = "<< /Type /ExtGState /ca 0.07 /CA 0.07 >>";
-  objs[gsHeader] = "<< /Type /ExtGState /ca 0.55 /CA 0.55 >>";
-  if (logo) {
-    const dict = `<< /Type /XObject /Subtype /Image /Width ${logo.w} /Height ${logo.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${logo.bytes.length} >> stream\n`;
-    objs[imgId] = concat([strBytes(dict), logo.bytes, strBytes("\nendstream")]);
-  }
-
-  const pageIds: number[] = [];
-  const xobject = logo ? `/XObject << /Im1 ${imgId} 0 R >>` : "";
-  for (let i = 0; i < n; i++) {
-    const contentId = firstContent + i * 2;
-    const pageId = contentId + 1;
-    pageIds.push(pageId);
-    const stream = pageStreams[i];
-    objs[contentId] = `<< /Length ${stream.length} >> stream\n${stream}endstream`;
-    objs[pageId] =
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}] /Resources << /Font << /F1 ${font1} 0 R /F2 ${font2} 0 R >> /ExtGState << /GS1 ${gsFaint} 0 R /GS2 ${gsHeader} 0 R >> ${xobject} >> /Contents ${contentId} 0 R >>`;
-  }
-  objs[2] = `<< /Type /Pages /Kids [ ${pageIds.map((id) => `${id} 0 R`).join(" ")} ] /Count ${n} >>`;
-
-  const maxId = firstContent + n * 2 - 1;
-  const parts: Uint8Array[] = [strBytes("%PDF-1.4\n")];
-  let pos = parts[0].length;
-  const offsets = [0];
-  for (let id = 1; id <= maxId; id++) {
-    offsets[id] = pos;
-    const body = objs[id];
-    const piece =
-      typeof body === "string" || !body
-        ? strBytes(`${id} 0 obj ${body || "<< >>"} endobj\n`)
-        : concat([strBytes(`${id} 0 obj `), body, strBytes(" endobj\n")]);
-    parts.push(piece);
-    pos += piece.length;
-  }
-  const xrefPos = pos;
-  let xref = `xref\n0 ${maxId + 1}\n0000000000 65535 f \n`;
-  for (let id = 1; id <= maxId; id++) {
-    xref += `${String(offsets[id]).padStart(10, "0")} 00000 n \n`;
-  }
-  xref += `trailer << /Size ${maxId + 1} /Root 1 0 R >>\nstartxref\n${xrefPos}\n%%EOF`;
-  parts.push(strBytes(xref));
-
-  saveAsFile(concat(parts), filename.endsWith(".pdf") ? filename : `${filename}.pdf`);
+  const buf = doc.output("arraybuffer");
+  saveAsFile(buf, filename.endsWith(".pdf") ? filename : `${filename}.pdf`);
 }
