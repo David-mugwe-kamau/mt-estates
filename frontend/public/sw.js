@@ -1,4 +1,4 @@
-const CACHE = "mt-estates-v2";
+const CACHE = "mt-estates-v3";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(self.skipWaiting());

@@ -267,7 +267,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
       asAtMonthLabel(period),
       headers,
       rows,
-    );
+    ).catch((e) => setError(e instanceof Error ? e.message : "Could not download PDF"));
   }
 
   async function loadHistory() {
@@ -320,7 +320,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
       asAtMonthLabel(historyTo),
       headers,
       rows,
-    );
+    ).catch((e) => setError(e instanceof Error ? e.message : "Could not download PDF"));
   }
 
   if (loading) {

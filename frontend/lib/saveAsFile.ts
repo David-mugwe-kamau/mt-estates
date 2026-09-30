@@ -1,5 +1,5 @@
-export function saveAsFile(data: BlobPart, filename: string) {
-  const blob = new Blob([data], { type: "application/octet-stream" });
+export function saveAsFile(data: BlobPart, filename: string, mime = "application/pdf") {
+  const blob = new Blob([data], { type: mime });
   const ie = window.navigator as Navigator & { msSaveOrOpenBlob?: (b: Blob, n: string) => void };
   if (ie.msSaveOrOpenBlob) {
     ie.msSaveOrOpenBlob(blob, filename);
@@ -16,5 +16,5 @@ export function saveAsFile(data: BlobPart, filename: string) {
   window.setTimeout(() => {
     a.remove();
     URL.revokeObjectURL(url);
-  }, 2000);
+  }, 2500);
 }
