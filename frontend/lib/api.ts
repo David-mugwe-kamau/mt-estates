@@ -501,7 +501,7 @@ export interface BillingStatement {
 
 export const billing = {
   get: (propertyId: number, period: string, token: string) =>
-    request<BillingStatement>(`/api/v1/billing/${propertyId}/${period}`, {}, token),
+    request<BillingStatement>(`/api/v1/billing/${propertyId}/${encodeURIComponent(period)}`, {}, token),
   periods: (propertyId: number, token: string) =>
     request<string[]>(`/api/v1/billing/${propertyId}/periods`, {}, token),
   save: (
@@ -519,7 +519,7 @@ export const billing = {
     token: string,
   ) =>
     request<BillingStatement>(
-      `/api/v1/billing/${propertyId}/${period}/readings`,
+      `/api/v1/billing/${propertyId}/${encodeURIComponent(period)}/readings`,
       { method: "POST", body: JSON.stringify(data) },
       token,
     ),

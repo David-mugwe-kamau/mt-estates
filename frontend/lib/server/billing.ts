@@ -12,6 +12,14 @@ function prevPeriod(period: string): string {
   return `${y}-${String(m - 1).padStart(2, "0")}`;
 }
 
+function normalizePeriod(period: string): string {
+  const p = decodeURIComponent(String(period || "")).slice(0, 7);
+  if (!/^\d{4}-\d{2}$/.test(p)) {
+    throw new Error("Invalid billing month");
+  }
+  return p;
+}
+
 function totals(lines: Array<Record<string, unknown>>) {
   const keys = [
     "water_units",
@@ -71,6 +79,7 @@ function lineFromReading(
 }
 
 export async function getStatement(user: AuthUser, propertyId: number, period: string) {
+  period = normalizePeriod(period);
   const prop = await ownedProperty(propertyId, user.id);
   if (!prop) return null;
   const db = getPool();
@@ -102,12 +111,14 @@ export async function getStatement(user: AuthUser, propertyId: number, period: s
     }
 
     const readings = await db.query(
-      `SELECT * FROM meter_readings WHERE unit_id = ANY($1::int[]) AND period = ANY($2::text[])`,
-      [unitIds, [period, prev]],
+      `SELECT * FROM meter_readings
+       WHERE unit_id = ANY($1::int[]) AND (period = $2 OR period = $3)`,
+      [unitIds, period, prev],
     );
     for (const row of readings.rows) {
-      if (row.period === period) currentByUnit.set(row.unit_id, row);
-      if (row.period === prev) prevByUnit.set(row.unit_id, row);
+      const p = String(row.period || "").slice(0, 7);
+      if (p === period) currentByUnit.set(row.unit_id, row);
+      if (p === prev) prevByUnit.set(row.unit_id, row);
     }
   }
 
@@ -186,6 +197,7 @@ export async function upsertReadings(
     main_meter_reading?: number;
   },
 ) {
+  period = normalizePeriod(period);
   const prop = await ownedProperty(propertyId, user.id);
   if (!prop) return null;
   const db = getPool();
@@ -249,49 +261,37 @@ export async function upsertReadings(
       }
       const balance = arrears + totalDue - amountPaid;
 
-      if (existing.rows[0]) {
-        await client.query(
-          `UPDATE meter_readings SET
-             previous_reading = $1, current_reading = $2, water_units = $3, water_cost = $4,
-             garbage_fee = $5, rent_amount = $6, total_due = $7, arrears = $8,
-             amount_paid = $9, balance = $10
-           WHERE id = $11`,
-          [
-            previous,
-            current,
-            waterUnits,
-            waterCost,
-            garbage,
-            rent,
-            totalDue,
-            arrears,
-            amountPaid,
-            balance,
-            existing.rows[0].id,
-          ],
-        );
-      } else {
-        await client.query(
-          `INSERT INTO meter_readings (
-             unit_id, period, previous_reading, current_reading, water_units, water_cost,
-             garbage_fee, rent_amount, total_due, arrears, amount_paid, balance
-           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-          [
-            unit.rows[0].id,
-            period,
-            previous,
-            current,
-            waterUnits,
-            waterCost,
-            garbage,
-            rent,
-            totalDue,
-            arrears,
-            amountPaid,
-            balance,
-          ],
-        );
-      }
+      await client.query(
+        `INSERT INTO meter_readings (
+           unit_id, period, previous_reading, current_reading, water_units, water_cost,
+           garbage_fee, rent_amount, total_due, arrears, amount_paid, balance
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+         ON CONFLICT (unit_id, period) DO UPDATE SET
+           previous_reading = EXCLUDED.previous_reading,
+           current_reading = EXCLUDED.current_reading,
+           water_units = EXCLUDED.water_units,
+           water_cost = EXCLUDED.water_cost,
+           garbage_fee = EXCLUDED.garbage_fee,
+           rent_amount = EXCLUDED.rent_amount,
+           total_due = EXCLUDED.total_due,
+           arrears = EXCLUDED.arrears,
+           amount_paid = EXCLUDED.amount_paid,
+           balance = EXCLUDED.balance`,
+        [
+          unit.rows[0].id,
+          period,
+          previous,
+          current,
+          waterUnits,
+          waterCost,
+          garbage,
+          rent,
+          totalDue,
+          arrears,
+          amountPaid,
+          balance,
+        ],
+      );
     }
     await client.query("COMMIT");
   } catch (e) {

@@ -26,17 +26,17 @@ function toNum(v: number | string): number {
 /** Empty editable cells show watermark placeholders — not painted-in zeros. */
 function linesForForm(lines: BillingLine[]): BillingLine[] {
   return lines.map((l) => {
-    if (l.id == null) {
+    if (l.id != null) {
       return {
         ...l,
-        previous_reading: (l.previous_reading ? l.previous_reading : "") as unknown as number,
-        current_reading: "" as unknown as number,
-        amount_paid: "" as unknown as number,
+        amount_paid: l.amount_paid ? l.amount_paid : ("" as unknown as number),
       };
     }
     return {
       ...l,
-      amount_paid: (l.amount_paid ? l.amount_paid : "") as unknown as number,
+      previous_reading: (l.previous_reading ? l.previous_reading : "") as unknown as number,
+      current_reading: "" as unknown as number,
+      amount_paid: "" as unknown as number,
     };
   });
 }
