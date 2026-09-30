@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getToken } from "@/lib/auth";
 import { billing, type BillingLine, type BillingStatement } from "@/lib/api";
+import { downloadPdfTable } from "@/lib/billingPdf";
 
 function money(n: number) {
   return Number(n || 0).toLocaleString("en-KE", { maximumFractionDigits: 0 });
@@ -277,6 +278,69 @@ export default function BillingPage({ params }: { params: { id: string } }) {
     downloadCsv(`billing-${propertyId}-${period}.csv`, headers, rows);
   }
 
+  function handleDownloadPdf() {
+    if (!liveLines.length) return;
+    const extraHeaders = extraCols.map((c) => c.label);
+    const headers = [
+      "House",
+      "Tenant",
+      "Initial",
+      "Current",
+      "Units",
+      "Water",
+      "Garbage",
+      "Rent",
+      ...extraHeaders,
+      "Arrears",
+      "Total",
+      "Paid",
+      "Balance",
+    ];
+    const rows: Array<Array<string | number>> = liveLines.map((l) => {
+      const house = `${l.unit_number}${l.occupancy === "vacant" ? " (vacant)" : ""}`;
+      return [
+        house,
+        l.tenant_name ?? "",
+        money(toNum(l.previous_reading as number | string)),
+        money(toNum(l.current_reading as number | string)),
+        money(l.water_units),
+        money(l.water_cost),
+        money(l.garbage_fee),
+        money(l.rent_amount),
+        ...extraCols.map((_, i) => money(extraOnLine(l, i))),
+        money(l.arrears || 0),
+        money(l.total_due),
+        money(toNum(l.amount_paid as number | string)),
+        money(l.balance),
+      ];
+    });
+    rows.push([
+      "Totals",
+      "",
+      "",
+      "",
+      money(totals.water_units || 0),
+      money(totals.water_cost || 0),
+      money(totals.garbage_fee || 0),
+      money(totals.rent_amount || 0),
+      ...extraCols.map((_, i) => money(liveLines.reduce((s, l) => s + extraOnLine(l, i), 0))),
+      money(totals.arrears || 0),
+      money(totals.total_due || 0),
+      money(totals.amount_paid || 0),
+      money(totals.balance || 0),
+    ]);
+    const extrasNote = extraCols.length
+      ? extraCols.map((c) => `${c.label} KSh ${money(c.amount)}`).join(" · ")
+      : "No extra charges";
+    downloadPdfTable(
+      `billing-${propertyId}-${period}.pdf`,
+      "MT Estates billing",
+      `Period ${period} · Water KSh ${money(statement?.water_rate_per_unit || 0)}/unit · Garbage KSh ${money(statement?.garbage_fee || 0)} · ${extrasNote}`,
+      headers,
+      rows,
+    );
+  }
+
   async function loadHistory() {
     const token = getToken();
     if (!token) return;
@@ -337,6 +401,37 @@ export default function BillingPage({ params }: { params: { id: string } }) {
     downloadCsv(`billing-history-${propertyId}-${historyFrom}-${historyTo}.csv`, headers, rows);
   }
 
+  function handleDownloadHistoryPdf() {
+    if (!historyLines.length) return;
+    const headers = [
+      "Period",
+      "House",
+      "Tenant",
+      "Charges",
+      "Arrears",
+      "Total",
+      "Paid",
+      "Balance",
+    ];
+    const rows = historyLines.map((l) => [
+      l.period,
+      `${l.unit_number}${l.occupancy === "vacant" ? " (vacant)" : ""}`,
+      l.tenant_name ?? "",
+      extrasNamed(l),
+      money(l.arrears || 0),
+      money(l.total_due),
+      money(l.amount_paid),
+      money(l.balance),
+    ]);
+    downloadPdfTable(
+      `billing-history-${propertyId}-${historyFrom}-${historyTo}.pdf`,
+      "MT Estates billing history",
+      `Saved months ${historyFrom} to ${historyTo}`,
+      headers,
+      rows,
+    );
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 px-4">
@@ -387,6 +482,14 @@ export default function BillingPage({ params }: { params: { id: string } }) {
           />
           <button type="button" onClick={() => window.print()} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold">
             Print
+          </button>
+          <button
+            type="button"
+            onClick={handleDownloadPdf}
+            disabled={liveLines.length === 0}
+            className="rounded-lg bg-mt-blue px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            Download PDF
           </button>
           <button
             type="button"
@@ -591,6 +694,14 @@ export default function BillingPage({ params }: { params: { id: string } }) {
             className="rounded-lg bg-mt-blue px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
           >
             {historyBusy ? "Loading…" : "Show history"}
+          </button>
+          <button
+            type="button"
+            onClick={handleDownloadHistoryPdf}
+            disabled={historyLines.length === 0}
+            className="rounded-lg bg-mt-blue px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            Download PDF
           </button>
           <button
             type="button"
