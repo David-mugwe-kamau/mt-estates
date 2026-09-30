@@ -1,6 +1,7 @@
 import { getPool, jsonError } from "@/lib/server/db";
 import { isAuthUser, requireUser, type AuthUser } from "@/lib/server/auth";
 import { UNIT_CATEGORIES } from "@/lib/apartmentTypes";
+import { ensureExtraChargeColumns, parseExtraCharges } from "@/lib/server/extraCharges";
 
 const FREE_GALLERY_LIMIT = 6;
 const LABEL_MAP = Object.fromEntries(UNIT_CATEGORIES.map((c) => [c.id, c.label]));
@@ -34,6 +35,7 @@ type PropRow = {
   longitude: number | null;
   water_rate_per_unit: unknown;
   garbage_fee: unknown;
+  extra_charges?: unknown;
   main_meter_reading: unknown;
   view_count: number;
   cover_image_id: number | null;
@@ -96,6 +98,7 @@ function propBase(p: PropRow) {
     longitude: p.longitude != null ? Number(p.longitude) : null,
     water_rate_per_unit: num(p.water_rate_per_unit),
     garbage_fee: num(p.garbage_fee),
+    extra_charges: parseExtraCharges(p.extra_charges),
     main_meter_reading: num(p.main_meter_reading),
     view_count: p.view_count ?? 0,
     cover_image_id: p.cover_image_id,
@@ -108,7 +111,7 @@ async function ownedProperty(propertyId: number, ownerId: number) {
   const r = await db.query<PropRow>(
     `SELECT id, owner_id, name, location, county, locality, listing_type, is_published,
             description, image_url, contact_phone, contact_whatsapp, contact_email,
-            latitude, longitude, water_rate_per_unit, garbage_fee, main_meter_reading,
+            latitude, longitude, water_rate_per_unit, garbage_fee, extra_charges, main_meter_reading,
             view_count, cover_image_id, created_at::text AS created_at
      FROM properties
      WHERE id = $1 AND owner_id = $2 AND COALESCE(is_unused, false) = false`,
@@ -190,11 +193,12 @@ function pickCoverUrl(prop: PropRow, images: ImageRow[]): string | null {
 }
 
 export async function listOwnerProperties(user: AuthUser) {
+  await ensureExtraChargeColumns();
   const db = getPool();
   const r = await db.query<PropRow>(
     `SELECT id, owner_id, name, location, county, locality, listing_type, is_published,
             description, image_url, contact_phone, contact_whatsapp, contact_email,
-            latitude, longitude, water_rate_per_unit, garbage_fee, main_meter_reading,
+            latitude, longitude, water_rate_per_unit, garbage_fee, extra_charges, main_meter_reading,
             view_count, cover_image_id, created_at::text AS created_at
      FROM properties
      WHERE owner_id = $1 AND COALESCE(is_unused, false) = false
@@ -219,6 +223,7 @@ export async function listOwnerProperties(user: AuthUser) {
 }
 
 export async function getOwnerProperty(user: AuthUser, propertyId: number) {
+  await ensureExtraChargeColumns();
   const prop = await ownedProperty(propertyId, user.id);
   if (!prop) return null;
   const images = await loadImages(propertyId);
@@ -232,6 +237,7 @@ export async function getOwnerProperty(user: AuthUser, propertyId: number) {
 }
 
 export async function createOwnerProperty(user: AuthUser, body: Record<string, unknown>) {
+  await ensureExtraChargeColumns();
   const db = getPool();
   const r = await db.query<PropRow>(
     `INSERT INTO properties (
@@ -244,7 +250,7 @@ export async function createOwnerProperty(user: AuthUser, body: Record<string, u
      )
      RETURNING id, owner_id, name, location, county, locality, listing_type, is_published,
                description, image_url, contact_phone, contact_whatsapp, contact_email,
-               latitude, longitude, water_rate_per_unit, garbage_fee, main_meter_reading,
+               latitude, longitude, water_rate_per_unit, garbage_fee, extra_charges, main_meter_reading,
                view_count, cover_image_id, created_at::text AS created_at`,
     [
       user.id,
@@ -298,6 +304,7 @@ export async function updateOwnerProperty(
   propertyId: number,
   body: Record<string, unknown>,
 ) {
+  await ensureExtraChargeColumns();
   const prop = await ownedProperty(propertyId, user.id);
   if (!prop) return null;
   if (body.is_published === true) await assertCanPublish(prop, body);
@@ -319,6 +326,7 @@ export async function updateOwnerProperty(
     "longitude",
     "water_rate_per_unit",
     "garbage_fee",
+    "extra_charges",
     "main_meter_reading",
     "is_published",
     "image_url",
@@ -326,7 +334,7 @@ export async function updateOwnerProperty(
   for (const key of allowed) {
     if (key in body && body[key] !== undefined) {
       fields.push(`${key} = $${i++}`);
-      values.push(body[key]);
+      values.push(key === "extra_charges" ? JSON.stringify(parseExtraCharges(body[key])) : body[key]);
     }
   }
   if (!fields.length) return propBase(prop);
@@ -338,7 +346,7 @@ export async function updateOwnerProperty(
        AND COALESCE(is_unused, false) = false
      RETURNING id, owner_id, name, location, county, locality, listing_type, is_published,
                description, image_url, contact_phone, contact_whatsapp, contact_email,
-               latitude, longitude, water_rate_per_unit, garbage_fee, main_meter_reading,
+               latitude, longitude, water_rate_per_unit, garbage_fee, extra_charges, main_meter_reading,
                view_count, cover_image_id, created_at::text AS created_at`,
     values,
   );
@@ -476,7 +484,7 @@ export async function setListingCover(user: AuthUser, propertyId: number, imageI
     `UPDATE properties SET cover_image_id = $1 WHERE id = $2
      RETURNING id, owner_id, name, location, county, locality, listing_type, is_published,
                description, image_url, contact_phone, contact_whatsapp, contact_email,
-               latitude, longitude, water_rate_per_unit, garbage_fee, main_meter_reading,
+               latitude, longitude, water_rate_per_unit, garbage_fee, extra_charges, main_meter_reading,
                view_count, cover_image_id, created_at::text AS created_at`,
     [imageId, propertyId],
   );

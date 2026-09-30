@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { getToken } from "@/lib/auth";
 import { properties, units } from "@/lib/api";
-import type { PropertyDetail, UnitResponse } from "@/lib/api";
+import type { ExtraCharge, PropertyDetail, UnitResponse } from "@/lib/api";
 import { GalleryManager } from "@/components/GalleryManager";
 import { LocationPicker, type LocationValue } from "@/components/LocationPicker";
 import { AreaScopePicker } from "@/components/AreaScopePicker";
@@ -35,6 +35,7 @@ export default function EditPropertyPage({ params }: { params: { id: string } })
   const [editingUnitId, setEditingUnitId] = useState<number | null>(null);
   const [editUnit, setEditUnit] = useState({ unit_number: "", rent_amount: "", status: "vacant" });
   const [billingOpen, setBillingOpen] = useState(false);
+  const [extraCharges, setExtraCharges] = useState<ExtraCharge[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -57,6 +58,7 @@ export default function EditPropertyPage({ params }: { params: { id: string } })
       water_rate_per_unit: String(p.water_rate_per_unit ?? 150),
       garbage_fee: String(p.garbage_fee ?? 200),
     });
+    setExtraCharges(p.extra_charges?.length ? p.extra_charges : []);
     setPlace({
       location: p.location,
       latitude: p.latitude,
@@ -101,6 +103,9 @@ export default function EditPropertyPage({ params }: { params: { id: string } })
           contact_whatsapp: form.contact_whatsapp || undefined,
           water_rate_per_unit: form.water_rate_per_unit ? Number(form.water_rate_per_unit) : undefined,
           garbage_fee: form.garbage_fee ? Number(form.garbage_fee) : undefined,
+          extra_charges: extraCharges
+            .map((c) => ({ label: c.label.trim(), amount: Number(c.amount) }))
+            .filter((c) => c.label && Number.isFinite(c.amount) && c.amount >= 0),
           latitude: place.latitude ?? undefined,
           longitude: place.longitude ?? undefined,
         },
@@ -530,6 +535,52 @@ export default function EditPropertyPage({ params }: { params: { id: string } })
             <label className="block text-xs font-medium text-slate-600">Garbage fee (KSh)</label>
             <input name="garbage_fee" type="number" value={form.garbage_fee} onChange={handleChange} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
           </div>
+        </div>
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-slate-600">Extra monthly charges (optional)</p>
+          <p className="text-xs text-slate-500">
+            Security, service charge, parking, and similar. Occupied houses get these on billing; vacant houses do not.
+          </p>
+          {extraCharges.map((c, i) => (
+            <div key={i} className="flex flex-wrap gap-2">
+              <input
+                value={c.label}
+                onChange={(e) =>
+                  setExtraCharges((prev) => prev.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))
+                }
+                placeholder="Charge name"
+                className="min-w-[140px] flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              />
+              <input
+                type="number"
+                min="0"
+                value={c.amount || ""}
+                onChange={(e) =>
+                  setExtraCharges((prev) =>
+                    prev.map((x, j) => (j === i ? { ...x, amount: Number(e.target.value) || 0 } : x)),
+                  )
+                }
+                placeholder="KSh"
+                className="w-28 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              />
+              <button
+                type="button"
+                onClick={() => setExtraCharges((prev) => prev.filter((_, j) => j !== i))}
+                className="text-xs font-semibold text-red-500"
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+          {extraCharges.length < 20 && (
+            <button
+              type="button"
+              onClick={() => setExtraCharges((prev) => [...prev, { label: "", amount: 0 }])}
+              className="text-xs font-semibold text-mt-blue"
+            >
+              + Add charge
+            </button>
+          )}
         </div>
 
         <div className="space-y-2 rounded-xl bg-slate-50 p-4">

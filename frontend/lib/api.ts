@@ -122,6 +122,11 @@ export interface UnitTypeResponse {
   created_at: string;
 }
 
+export interface ExtraCharge {
+  label: string;
+  amount: number;
+}
+
 export interface PropertyResponse {
   id: number;
   owner_id: number;
@@ -140,6 +145,7 @@ export interface PropertyResponse {
   longitude: number | null;
   water_rate_per_unit?: number | null;
   garbage_fee?: number | null;
+  extra_charges?: ExtraCharge[];
   main_meter_reading?: number | null;
   view_count?: number;
   cover_image_id?: number | null;
@@ -168,6 +174,7 @@ export interface PropertyCreateInput {
   longitude?: number;
   water_rate_per_unit?: number;
   garbage_fee?: number;
+  extra_charges?: ExtraCharge[];
 }
 
 export interface PropertyUpdateInput extends Partial<PropertyCreateInput> {
@@ -484,6 +491,8 @@ export interface BillingLine {
   water_cost: number;
   garbage_fee: number;
   rent_amount: number;
+  extras_total?: number;
+  extra_charges?: ExtraCharge[];
   total_due: number;
   arrears: number;
   amount_paid: number;
@@ -495,6 +504,8 @@ export interface BillingStatement {
   period: string;
   water_rate_per_unit: number;
   garbage_fee: number;
+  extra_charges?: ExtraCharge[];
+  extras_total?: number;
   main_meter_reading: number | null;
   lines: BillingLine[];
   totals: Record<string, number>;

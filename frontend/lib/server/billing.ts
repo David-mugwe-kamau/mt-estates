@@ -1,5 +1,10 @@
 import { getPool } from "@/lib/server/db";
 import type { AuthUser } from "@/lib/server/auth";
+import {
+  ensureExtraChargeColumns,
+  extraChargesSum,
+  parseExtraCharges,
+} from "@/lib/server/extraCharges";
 
 function n(v: unknown): number {
   const x = Number(v ?? 0);
@@ -26,6 +31,7 @@ function totals(lines: Array<Record<string, unknown>>) {
     "water_cost",
     "garbage_fee",
     "rent_amount",
+    "extras_total",
     "total_due",
     "arrears",
     "amount_paid",
@@ -38,12 +44,13 @@ function totals(lines: Array<Record<string, unknown>>) {
 
 function openingArrears(
   occupancy: "occupied" | "vacant",
-  last: { balance?: unknown; rent_amount?: unknown; garbage_fee?: unknown } | undefined,
+  last: { balance?: unknown; rent_amount?: unknown; garbage_fee?: unknown; extra_total?: unknown } | undefined,
 ): number {
   if (!last) return 0;
   const balance = n(last.balance);
   if (occupancy === "vacant") return balance;
-  const lastWasVacant = n(last.rent_amount) === 0 && n(last.garbage_fee) === 0;
+  const lastWasVacant =
+    n(last.rent_amount) === 0 && n(last.garbage_fee) === 0 && n(last.extra_total) === 0;
   if (lastWasVacant) return 0;
   return balance;
 }
@@ -74,9 +81,10 @@ async function ownedProperty(propertyId: number, ownerId: number) {
     id: number;
     water_rate_per_unit: unknown;
     garbage_fee: unknown;
+    extra_charges: unknown;
     main_meter_reading: unknown;
   }>(
-    `SELECT id, water_rate_per_unit, garbage_fee, main_meter_reading
+    `SELECT id, water_rate_per_unit, garbage_fee, extra_charges, main_meter_reading
      FROM properties
      WHERE id = $1 AND owner_id = $2 AND COALESCE(is_unused, false) = false`,
     [propertyId, ownerId],
@@ -96,9 +104,11 @@ function lineFromReading(
   const waterCost = n(r.water_cost);
   const garbage = occupancy === "occupied" ? n(r.garbage_fee) : 0;
   const rent = occupancy === "occupied" ? n(r.rent_amount) : 0;
+  const extrasTotal = occupancy === "occupied" ? n(r.extra_total) : 0;
   const arrears = n(r.arrears);
   const amountPaid = n(r.amount_paid);
   const totalDue = occupancy === "occupied" ? n(r.total_due) : waterCost;
+  const extraCharges = occupancy === "occupied" ? parseExtraCharges(r.extra_charges) : [];
   return {
     id: r.id as number,
     unit_id: r.unit_id as number,
@@ -114,6 +124,8 @@ function lineFromReading(
     water_cost: waterCost,
     garbage_fee: garbage,
     rent_amount: rent,
+    extras_total: extrasTotal,
+    extra_charges: extraCharges,
     total_due: totalDue,
     arrears,
     amount_paid: amountPaid,
@@ -124,11 +136,14 @@ function lineFromReading(
 export async function getStatement(user: AuthUser, propertyId: number, period: string) {
   period = normalizePeriod(period);
   await ensureTenantNameColumn();
+  await ensureExtraChargeColumns();
   const prop = await ownedProperty(propertyId, user.id);
   if (!prop) return null;
   const db = getPool();
   const waterRate = prop.water_rate_per_unit != null ? n(prop.water_rate_per_unit) : 150;
   const garbage = prop.garbage_fee != null ? n(prop.garbage_fee) : 200;
+  const extraCharges = parseExtraCharges(prop.extra_charges);
+  const extrasSum = extraChargesSum(extraCharges);
   const prev = prevPeriod(period);
 
   const units = await db.query<{ id: number; unit_number: string; rent_amount: unknown; status: string }>(
@@ -181,7 +196,8 @@ export async function getStatement(user: AuthUser, propertyId: number, period: s
     const arrears = openingArrears(occupancy, last);
     const rent = occupancy === "occupied" ? n(unit.rent_amount) : 0;
     const garbageFee = occupancy === "occupied" ? garbage : 0;
-    const totalDue = garbageFee + rent;
+    const extrasFee = occupancy === "occupied" ? extrasSum : 0;
+    const totalDue = garbageFee + rent + extrasFee;
     lines.push({
       id: null,
       unit_id: unit.id,
@@ -197,6 +213,8 @@ export async function getStatement(user: AuthUser, propertyId: number, period: s
       water_cost: 0,
       garbage_fee: garbageFee,
       rent_amount: rent,
+      extras_total: extrasFee,
+      extra_charges: occupancy === "occupied" ? extraCharges : [],
       total_due: totalDue,
       arrears,
       amount_paid: 0,
@@ -209,6 +227,8 @@ export async function getStatement(user: AuthUser, propertyId: number, period: s
     period,
     water_rate_per_unit: waterRate,
     garbage_fee: garbage,
+    extra_charges: extraCharges,
+    extras_total: extrasSum,
     main_meter_reading: prop.main_meter_reading != null ? n(prop.main_meter_reading) : null,
     lines,
     totals: totals(lines),
@@ -239,6 +259,7 @@ export async function getHistory(user: AuthUser, propertyId: number, fromRaw: st
     to = tmp;
   }
   await ensureTenantNameColumn();
+  await ensureExtraChargeColumns();
   const prop = await ownedProperty(propertyId, user.id);
   if (!prop) return null;
   const db = getPool();
@@ -268,7 +289,7 @@ export async function getHistory(user: AuthUser, propertyId: number, fromRaw: st
   }
 
   const lines = readings.rows.map((r) => {
-    const savedVacant = n(r.rent_amount) === 0 && n(r.garbage_fee) === 0;
+    const savedVacant = n(r.rent_amount) === 0 && n(r.garbage_fee) === 0 && n(r.extra_total) === 0;
     const occupancy: "occupied" | "vacant" = savedVacant ? "vacant" : "occupied";
     const tenant = tenantsByUnit.get(n(r.unit_id)) || null;
     return lineFromReading(r, String(r.unit_number), tenant, occupancy);
@@ -294,11 +315,14 @@ export async function upsertReadings(
 ) {
   period = normalizePeriod(period);
   await ensureTenantNameColumn();
+  await ensureExtraChargeColumns();
   const prop = await ownedProperty(propertyId, user.id);
   if (!prop) return null;
   const db = getPool();
   const waterRate = prop.water_rate_per_unit != null ? n(prop.water_rate_per_unit) : 150;
   const garbageDefault = prop.garbage_fee != null ? n(prop.garbage_fee) : 200;
+  const extraCharges = parseExtraCharges(prop.extra_charges);
+  const extrasSum = extraChargesSum(extraCharges);
   const prev = prevPeriod(period);
 
   const client = await db.connect();
@@ -326,7 +350,7 @@ export async function upsertReadings(
       const occupied = unit.rows[0].status === "occupied";
 
       const last = await client.query(
-        `SELECT current_reading, balance, rent_amount, garbage_fee, tenant_name
+        `SELECT current_reading, balance, rent_amount, garbage_fee, extra_total, tenant_name
          FROM meter_readings WHERE unit_id = $1 AND period = $2`,
         [unit.rows[0].id, prev],
       );
@@ -345,7 +369,9 @@ export async function upsertReadings(
       const waterCost = waterUnits * waterRate;
       const garbage = occupied ? garbageDefault : 0;
       const rent = occupied ? n(unit.rows[0].rent_amount) : 0;
-      const totalDue = waterCost + garbage + rent;
+      const extrasFee = occupied ? extrasSum : 0;
+      const extrasSnap = occupied ? extraCharges : [];
+      const totalDue = waterCost + garbage + rent + extrasFee;
       const arrears = openingArrears(occupied ? "occupied" : "vacant", last.rows[0]);
 
       const existing = await client.query(
@@ -372,8 +398,9 @@ export async function upsertReadings(
       await client.query(
         `INSERT INTO meter_readings (
            unit_id, period, previous_reading, current_reading, water_units, water_cost,
-           garbage_fee, rent_amount, total_due, arrears, amount_paid, balance, tenant_name
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+           garbage_fee, rent_amount, total_due, arrears, amount_paid, balance, tenant_name,
+           extra_charges, extra_total
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15)
          ON CONFLICT (unit_id, period) DO UPDATE SET
            previous_reading = EXCLUDED.previous_reading,
            current_reading = EXCLUDED.current_reading,
@@ -385,7 +412,9 @@ export async function upsertReadings(
            arrears = EXCLUDED.arrears,
            amount_paid = EXCLUDED.amount_paid,
            balance = EXCLUDED.balance,
-           tenant_name = EXCLUDED.tenant_name`,
+           tenant_name = EXCLUDED.tenant_name,
+           extra_charges = EXCLUDED.extra_charges,
+           extra_total = EXCLUDED.extra_total`,
         [
           unit.rows[0].id,
           period,
@@ -400,6 +429,8 @@ export async function upsertReadings(
           amountPaid,
           balance,
           tenantName,
+          JSON.stringify(extrasSnap),
+          extrasFee,
         ],
       );
     }
