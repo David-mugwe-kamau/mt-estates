@@ -216,8 +216,8 @@ export default function BillingPage({ params }: { params: { id: string } }) {
     const headers = [
       "House",
       "Tenant",
-      "Initial",
-      "Current",
+      "Prev. meter",
+      "Curr. meter",
       "Units",
       "Water",
       "Garbage",
