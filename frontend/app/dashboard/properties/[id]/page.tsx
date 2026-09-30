@@ -548,7 +548,7 @@ export default function EditPropertyPage({ params }: { params: { id: string } })
                 onChange={(e) =>
                   setExtraCharges((prev) => prev.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))
                 }
-                placeholder="Charge name"
+                placeholder="Charge name (e.g. Security)"
                 className="min-w-[140px] flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
               />
               <input
@@ -572,15 +572,27 @@ export default function EditPropertyPage({ params }: { params: { id: string } })
               </button>
             </div>
           ))}
-          {extraCharges.length < 20 && (
+          <div className="flex flex-wrap items-center gap-3">
+            {extraCharges.length < 20 && (
+              <button
+                type="button"
+                onClick={() => setExtraCharges((prev) => [...prev, { label: "", amount: 0 }])}
+                className="text-xs font-semibold text-mt-blue"
+              >
+                + Add charge
+              </button>
+            )}
             <button
-              type="button"
-              onClick={() => setExtraCharges((prev) => [...prev, { label: "", amount: 0 }])}
-              className="text-xs font-semibold text-mt-blue"
+              type="submit"
+              disabled={saving}
+              className="rounded-lg bg-mt-blue px-4 py-2 text-xs font-semibold text-white hover:bg-mt-blue/90 disabled:opacity-60"
             >
-              + Add charge
+              {saving ? "Saving…" : "Save charges"}
             </button>
-          )}
+          </div>
+          <p className="text-xs text-slate-400">
+            Add a row, type the name and amount, then Save charges. Rows with no name are not kept.
+          </p>
         </div>
 
         <div className="space-y-2 rounded-xl bg-slate-50 p-4">
