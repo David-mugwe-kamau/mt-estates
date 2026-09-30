@@ -500,11 +500,24 @@ export interface BillingStatement {
   totals: Record<string, number>;
 }
 
+export interface BillingHistory {
+  from: string;
+  to: string;
+  lines: BillingLine[];
+  totals: Record<string, number>;
+}
+
 export const billing = {
   get: (propertyId: number, period: string, token: string) =>
     request<BillingStatement>(`/api/v1/billing/${propertyId}/${encodeURIComponent(period)}`, {}, token),
   periods: (propertyId: number, token: string) =>
     request<string[]>(`/api/v1/billing/${propertyId}/periods`, {}, token),
+  history: (propertyId: number, from: string, to: string, token: string) =>
+    request<BillingHistory>(
+      `/api/v1/billing/${propertyId}/history?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      {},
+      token,
+    ),
   save: (
     propertyId: number,
     period: string,

@@ -13,6 +13,27 @@ function currentPeriod() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function shiftPeriod(period: string, delta: number) {
+  const [y, m] = period.split("-").map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function downloadCsv(filename: string, headers: string[], rows: Array<Array<string | number>>) {
+  const escape = (v: string | number) => {
+    const s = String(v ?? "");
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = [headers, ...rows].map((row) => row.map(escape).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function fieldValue(v: number | string): string | number {
   return v === "" || v === undefined || v === null ? "" : v;
 }
@@ -51,6 +72,11 @@ export default function BillingPage({ params }: { params: { id: string } }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const now = currentPeriod();
+  const [historyFrom, setHistoryFrom] = useState(shiftPeriod(now, -5));
+  const [historyTo, setHistoryTo] = useState(now);
+  const [historyLines, setHistoryLines] = useState<BillingLine[]>([]);
+  const [historyBusy, setHistoryBusy] = useState(false);
 
   async function load(p = period) {
     const token = getToken();
@@ -168,6 +194,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
   function handleDownload() {
     if (!liveLines.length) return;
     const headers = [
+      "Period",
       "Unit / house no.",
       "Tenant",
       "Initial",
@@ -182,6 +209,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
       "Balance",
     ];
     const rows = liveLines.map((l) => [
+      period,
       l.unit_number,
       l.tenant_name ?? "",
       toNum(l.previous_reading as number | string),
@@ -200,6 +228,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
       "",
       "",
       "",
+      "",
       totals.water_units || 0,
       totals.water_cost || 0,
       totals.garbage_fee || 0,
@@ -209,18 +238,65 @@ export default function BillingPage({ params }: { params: { id: string } }) {
       totals.amount_paid || 0,
       totals.balance || 0,
     ]);
-    const escape = (v: string | number) => {
-      const s = String(v ?? "");
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    };
-    const csv = [headers, ...rows].map((row) => row.map(escape).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `billing-${propertyId}-${period}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadCsv(`billing-${propertyId}-${period}.csv`, headers, rows);
+  }
+
+  async function loadHistory() {
+    const token = getToken();
+    if (!token) return;
+    setHistoryBusy(true);
+    setError("");
+    try {
+      const data = await billing.history(propertyId, historyFrom, historyTo, token);
+      setHistoryLines(data.lines);
+      if (!data.lines.length) {
+        setSuccess("No saved months in that range. Save a month first, then search history.");
+      } else {
+        setSuccess(`Showing ${data.lines.length} saved row(s) from ${data.from} to ${data.to}.`);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not load history");
+      setHistoryLines([]);
+    } finally {
+      setHistoryBusy(false);
+    }
+  }
+
+  function handleDownloadHistory() {
+    if (!historyLines.length) return;
+    const headers = [
+      "Period",
+      "Unit / house no.",
+      "Occupancy",
+      "Tenant",
+      "Initial",
+      "Current",
+      "Units",
+      "Water",
+      "Garbage",
+      "Rent",
+      "Arrears",
+      "Total",
+      "Paid",
+      "Balance",
+    ];
+    const rows = historyLines.map((l) => [
+      l.period,
+      l.unit_number,
+      l.occupancy === "vacant" ? "Vacant" : "Occupied",
+      l.tenant_name ?? "",
+      l.previous_reading,
+      l.current_reading,
+      l.water_units,
+      l.water_cost,
+      l.garbage_fee,
+      l.rent_amount,
+      l.arrears || 0,
+      l.total_due,
+      l.amount_paid,
+      l.balance,
+    ]);
+    downloadCsv(`billing-history-${propertyId}-${historyFrom}-${historyTo}.csv`, headers, rows);
   }
 
   if (loading) {
@@ -412,6 +488,98 @@ export default function BillingPage({ params }: { params: { id: string } }) {
       {liveLines.length === 0 && (
         <p className="text-sm text-slate-500">Add units / house numbers on the property page first, then return here to bill.</p>
       )}
+
+      <div className="space-y-3 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100 print:hidden">
+        <div>
+          <h2 className="text-sm font-semibold text-slate-800">Saved history</h2>
+          <p className="text-xs text-slate-500">
+            Choose a month range to see saved bills, including vacant-house arrears. Open a month to record a later payment, then Save.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="text-xs font-medium text-slate-600">
+            From
+            <input
+              type="month"
+              value={historyFrom}
+              onChange={(e) => setHistoryFrom(e.target.value)}
+              className="mt-1 block rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="text-xs font-medium text-slate-600">
+            To
+            <input
+              type="month"
+              value={historyTo}
+              onChange={(e) => setHistoryTo(e.target.value)}
+              className="mt-1 block rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={loadHistory}
+            disabled={historyBusy}
+            className="rounded-lg bg-mt-blue px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+          >
+            {historyBusy ? "Loading…" : "Show history"}
+          </button>
+          <button
+            type="button"
+            onClick={handleDownloadHistory}
+            disabled={historyLines.length === 0}
+            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold disabled:opacity-50"
+          >
+            Download history
+          </button>
+        </div>
+        {historyLines.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="px-3 py-2">Period</th>
+                  <th className="px-3 py-2">Unit / house no.</th>
+                  <th className="px-3 py-2">Tenant</th>
+                  <th className="px-3 py-2">Arrears</th>
+                  <th className="px-3 py-2">Total</th>
+                  <th className="px-3 py-2">Paid</th>
+                  <th className="px-3 py-2">Balance</th>
+                  <th className="px-3 py-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {historyLines.map((l) => (
+                  <tr key={`${l.period}-${l.unit_id}`} className="border-t border-slate-100">
+                    <td className="px-3 py-2">{l.period}</td>
+                    <td className="px-3 py-2 font-semibold">
+                      {l.unit_number}
+                      {l.occupancy === "vacant" ? (
+                        <span className="ml-2 text-[10px] font-semibold uppercase text-slate-400">Vacant</span>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-2 text-slate-600">{l.tenant_name || "—"}</td>
+                    <td className="px-3 py-2">{money(l.arrears || 0)}</td>
+                    <td className="px-3 py-2">{money(l.total_due)}</td>
+                    <td className="px-3 py-2">{money(l.amount_paid)}</td>
+                    <td className={`px-3 py-2 font-semibold ${l.balance > 0 ? "text-red-600" : "text-green-600"}`}>
+                      {money(l.balance)}
+                    </td>
+                    <td className="px-3 py-2">
+                      <button
+                        type="button"
+                        onClick={() => setPeriod(l.period.slice(0, 7))}
+                        className="text-xs font-semibold text-mt-blue hover:underline"
+                      >
+                        Open month
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -209,6 +209,52 @@ export async function listPeriods(user: AuthUser, propertyId: number) {
   return r.rows.map((x) => x.period);
 }
 
+export async function getHistory(user: AuthUser, propertyId: number, fromRaw: string, toRaw: string) {
+  let from = normalizePeriod(fromRaw);
+  let to = normalizePeriod(toRaw);
+  if (from > to) {
+    const tmp = from;
+    from = to;
+    to = tmp;
+  }
+  const prop = await ownedProperty(propertyId, user.id);
+  if (!prop) return null;
+  const db = getPool();
+  const readings = await db.query<Record<string, unknown>>(
+    `SELECT mr.*, u.unit_number, u.status AS unit_status
+     FROM meter_readings mr
+     JOIN units u ON u.id = mr.unit_id
+     WHERE u.property_id = $1
+       AND COALESCE(u.is_unused, false) = false
+       AND mr.period >= $2 AND mr.period <= $3
+     ORDER BY mr.period, u.unit_number`,
+    [propertyId, from, to],
+  );
+
+  const tenantsByUnit = new Map<number, { id: number; name: string; phone: string | null }>();
+  const unitIds = [...new Set(readings.rows.map((r) => n(r.unit_id)))];
+  if (unitIds.length) {
+    try {
+      const tenants = await db.query<{ id: number; name: string; phone: string | null; unit_id: number }>(
+        `SELECT id, name, phone, unit_id FROM tenants WHERE unit_id = ANY($1::int[])`,
+        [unitIds],
+      );
+      for (const t of tenants.rows) tenantsByUnit.set(t.unit_id, t);
+    } catch {
+      // tenants table optional
+    }
+  }
+
+  const lines = readings.rows.map((r) => {
+    const savedVacant = n(r.rent_amount) === 0 && n(r.garbage_fee) === 0;
+    const occupancy: "occupied" | "vacant" = savedVacant ? "vacant" : "occupied";
+    const tenant = tenantsByUnit.get(n(r.unit_id)) || null;
+    return lineFromReading(r, String(r.unit_number), tenant, occupancy);
+  });
+
+  return { from, to, lines, totals: totals(lines) };
+}
+
 export async function upsertReadings(
   user: AuthUser,
   propertyId: number,
