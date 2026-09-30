@@ -1,8 +1,7 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { saveAsFile } from "@/lib/saveAsFile";
 
-async function loadLogo(): Promise<{ header: string; w: number; h: number } | null> {
+async function loadLogoJpeg(): Promise<string | null> {
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
       const el = new Image();
@@ -10,15 +9,17 @@ async function loadLogo(): Promise<{ header: string; w: number; h: number } | nu
       el.onerror = () => reject(new Error("logo"));
       el.src = "/images/mt-estates-logo.png";
     });
-    const w = Math.min(800, img.naturalWidth || 400);
+    const w = Math.min(400, img.naturalWidth || 200);
     const h = Math.round((w * (img.naturalHeight || 1)) / Math.max(1, img.naturalWidth || 1));
     const canvas = document.createElement("canvas");
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, w, h);
     ctx.drawImage(img, 0, 0, w, h);
-    return { header: canvas.toDataURL("image/png"), w, h };
+    return canvas.toDataURL("image/jpeg", 0.85);
   } catch {
     return null;
   }
@@ -62,19 +63,20 @@ export async function downloadPdfTable(
     orientation: landscape ? "landscape" : "portrait",
     unit: "mm",
     format: "a4",
-    compress: true,
   });
   const pageW = doc.internal.pageSize.getWidth();
-  const logo = await loadLogo();
+  const logo = await loadLogoJpeg();
   const name = (listingName || "Billing").trim();
-  const headerTop = logo ? 28 : 16;
+  const headerTop = logo ? 30 : 18;
+  const file = filename.endsWith(".pdf") ? filename : `${filename}.pdf`;
 
   const paintBranding = () => {
     if (logo) {
-      const ratio = logo.h / logo.w;
-      const hdW = 18;
-      const hdH = hdW * ratio;
-      doc.addImage(logo.header, "PNG", (pageW - hdW) / 2, 4, hdW, hdH);
+      try {
+        doc.addImage(logo, "JPEG", (pageW - 20) / 2, 5, 20, 10);
+      } catch {
+        // text header still prints if the logo cannot be embedded
+      }
     }
     doc.setTextColor(15, 23, 42);
     doc.setFont("helvetica", "bold");
@@ -85,43 +87,32 @@ export async function downloadPdfTable(
     if (asAt) doc.text(asAt, 8, logo ? 27 : 17);
   };
 
+  const colCount = Math.max(1, headers.length);
+  const tableW = Math.min(pageW - 12, Math.max(120, colCount * 14));
+
   autoTable(doc, {
     head: [headers.map((h) => String(h))],
     body: rows.map((row) => row.map((c) => String(c ?? ""))),
     startY: headerTop,
-    tableWidth: "wrap",
+    tableWidth: tableW,
     margin: { top: headerTop, left: 6, right: 6, bottom: 8 },
     styles: {
       font: "helvetica",
-      fontSize: landscape ? 6.5 : 7.5,
-      cellPadding: { top: 0.7, bottom: 0.7, left: 1.1, right: 1.1 },
-      overflow: "ellipsize",
+      fontSize: landscape ? 7 : 8,
+      cellPadding: 1,
+      overflow: "linebreak",
       valign: "middle",
-      halign: "left",
-      lineWidth: 0.1,
-      minCellHeight: 4.2,
-      cellWidth: "auto",
+      lineWidth: 0.15,
     },
     headStyles: {
       fillColor: [0, 91, 142],
       textColor: 255,
       fontStyle: "bold",
-      fontSize: landscape ? 6.5 : 7.5,
-      cellPadding: { top: 0.8, bottom: 0.8, left: 1.1, right: 1.1 },
     },
-    columnStyles: Object.fromEntries(
-      headers.map((_, i) => [i, { cellWidth: "auto" }]),
-    ),
-    footStyles: {
-      fillColor: [241, 245, 249],
-      textColor: [15, 23, 42],
-      fontStyle: "bold",
-    },
-    willDrawPage: () => {
+    didDrawPage: () => {
       paintBranding();
     },
   });
 
-  const buf = doc.output("arraybuffer");
-  saveAsFile(buf, filename.endsWith(".pdf") ? filename : `${filename}.pdf`);
+  doc.save(file);
 }
