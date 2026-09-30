@@ -36,6 +36,18 @@ function totals(lines: Array<Record<string, unknown>>) {
   return t;
 }
 
+function openingArrears(
+  occupancy: "occupied" | "vacant",
+  last: { balance?: unknown; rent_amount?: unknown; garbage_fee?: unknown } | undefined,
+): number {
+  if (!last) return 0;
+  const balance = n(last.balance);
+  if (occupancy === "vacant") return balance;
+  const lastWasVacant = n(last.rent_amount) === 0 && n(last.garbage_fee) === 0;
+  if (lastWasVacant) return 0;
+  return balance;
+}
+
 async function ownedProperty(propertyId: number, ownerId: number) {
   const db = getPool();
   const r = await db.query<{
@@ -108,7 +120,7 @@ export async function getStatement(user: AuthUser, propertyId: number, period: s
 
   const tenantsByUnit = new Map<number, { id: number; name: string; phone: string | null }>();
   const currentByUnit = new Map<number, Record<string, unknown>>();
-  const prevByUnit = new Map<number, { current_reading: unknown; balance: unknown }>();
+  const prevByUnit = new Map<number, Record<string, unknown>>();
 
   if (unitIds.length) {
     try {
@@ -145,7 +157,7 @@ export async function getStatement(user: AuthUser, propertyId: number, period: s
 
     const last = prevByUnit.get(unit.id);
     const previous = last ? n(last.current_reading) : 0;
-    const arrears = last ? n(last.balance) : 0;
+    const arrears = openingArrears(occupancy, last);
     const rent = occupancy === "occupied" ? n(unit.rent_amount) : 0;
     const garbageFee = occupancy === "occupied" ? garbage : 0;
     const totalDue = garbageFee + rent;
@@ -244,7 +256,8 @@ export async function upsertReadings(
       const occupied = unit.rows[0].status === "occupied";
 
       const last = await client.query(
-        `SELECT current_reading, balance FROM meter_readings WHERE unit_id = $1 AND period = $2`,
+        `SELECT current_reading, balance, rent_amount, garbage_fee
+         FROM meter_readings WHERE unit_id = $1 AND period = $2`,
         [unit.rows[0].id, prev],
       );
       const previous =
@@ -263,7 +276,7 @@ export async function upsertReadings(
       const garbage = occupied ? garbageDefault : 0;
       const rent = occupied ? n(unit.rows[0].rent_amount) : 0;
       const totalDue = waterCost + garbage + rent;
-      const arrears = last.rows[0] ? n(last.rows[0].balance) : 0;
+      const arrears = openingArrears(occupied ? "occupied" : "vacant", last.rows[0]);
 
       const existing = await client.query(
         `SELECT id, amount_paid FROM meter_readings WHERE unit_id = $1 AND period = $2`,
