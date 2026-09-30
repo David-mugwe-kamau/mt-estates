@@ -22,13 +22,17 @@ export async function POST(req: NextRequest) {
     if (bytes.length < 5 || String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]) !== "%PDF") {
       return jsonError("Could not create PDF", 500);
     }
-    const filename = String(body.filename || "statement.pdf").replace(/[^\w.\-]+/g, "_");
-    const safe = filename.endsWith(".pdf") ? filename : `${filename}.pdf`;
+    const filename = String(body.filename || "statement.pdf")
+      .replace(/[<>:"/\\|?*\x00-\x1f]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 180);
+    const safe = filename.toLowerCase().endsWith(".pdf") ? filename : `${filename}.pdf`;
     return new Response(Buffer.from(bytes), {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${safe}"`,
+        "Content-Disposition": `attachment; filename="${safe.replace(/"/g, "")}"; filename*=UTF-8''${encodeURIComponent(safe)}`,
         "Cache-Control": "no-store",
       },
     });

@@ -27,6 +27,16 @@ export function asAtMonthLabel(period: string) {
   return `as at ${last}${suf} ${names[month - 1]} ${year}`;
 }
 
+export function statementFileName(listingName: string, period: string) {
+  const name =
+    String(listingName || "Listing")
+      .replace(/[<>:"/\\|?*\x00-\x1f]/g, "")
+      .replace(/\s+/g, " ")
+      .trim() || "Listing";
+  const asAt = asAtMonthLabel(period);
+  return `${name} billing ${asAt}.pdf`;
+}
+
 export async function downloadPdfTable(
   filename: string,
   listingName: string,

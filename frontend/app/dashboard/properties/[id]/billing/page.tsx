@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getToken } from "@/lib/auth";
 import { billing, type BillingLine, type BillingStatement } from "@/lib/api";
-import { downloadPdfTable, asAtMonthLabel } from "@/lib/billingPdf";
+import { downloadPdfTable, asAtMonthLabel, statementFileName } from "@/lib/billingPdf";
 
 function money(n: number) {
   return Number(n || 0).toLocaleString("en-KE", { maximumFractionDigits: 0 });
@@ -262,7 +262,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
       money(totals.balance || 0),
     ]);
     void downloadPdfTable(
-      `billing-${propertyId}-${period}.pdf`,
+      statementFileName(statement?.property_name || "Listing", period),
       statement?.property_name || "Billing",
       asAtMonthLabel(period),
       headers,
@@ -315,7 +315,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
       money(l.balance),
     ]);
     void downloadPdfTable(
-      `billing-history-${propertyId}-${historyFrom}-${historyTo}.pdf`,
+      statementFileName(historyName || statement?.property_name || "Listing", historyTo),
       historyName || statement?.property_name || "Billing",
       asAtMonthLabel(historyTo),
       headers,
