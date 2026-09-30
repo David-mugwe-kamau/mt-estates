@@ -117,12 +117,26 @@ export default function BillingPage({ params }: { params: { id: string } }) {
       const vacant = l.occupancy === "vacant";
       const garbage_fee = vacant ? 0 : Number(l.garbage_fee) || 0;
       const rent_amount = vacant ? 0 : Number(l.rent_amount) || 0;
-      const extras_total = vacant ? 0 : Number(statement.extras_total) || 0;
+      const extra_charges = vacant ? [] : statement.extra_charges || l.extra_charges || [];
+      const extras_total = vacant
+        ? 0
+        : extra_charges.reduce((s, c) => s + Number(c.amount || 0), 0) || Number(statement.extras_total) || 0;
       const total_due = water_cost + garbage_fee + rent_amount + extras_total;
       const arrears = Number(l.arrears) || 0;
       const amount_paid = toNum(l.amount_paid as number | string);
       const balance = arrears + total_due - amount_paid;
-      return { ...l, water_units, water_cost, garbage_fee, rent_amount, extras_total, total_due, arrears, balance };
+      return {
+        ...l,
+        extra_charges,
+        water_units,
+        water_cost,
+        garbage_fee,
+        rent_amount,
+        extras_total,
+        total_due,
+        arrears,
+        balance,
+      };
     });
   }, [lines, statement]);
 
@@ -194,8 +208,24 @@ export default function BillingPage({ params }: { params: { id: string } }) {
     }
   }
 
+  const extraCols = statement?.extra_charges?.length ? statement.extra_charges : [];
+
+  function extraOnLine(line: BillingLine, index: number) {
+    if (line.occupancy === "vacant") return 0;
+    const list = line.extra_charges?.length ? line.extra_charges : extraCols;
+    return Number(list[index]?.amount) || 0;
+  }
+
+  function extrasNamed(line: BillingLine) {
+    if (line.occupancy === "vacant") return "—";
+    const list = line.extra_charges || [];
+    if (!list.length) return "—";
+    return list.map((c) => `${c.label} ${money(c.amount)}`).join(" · ");
+  }
+
   function handleDownload() {
     if (!liveLines.length) return;
+    const extraHeaders = extraCols.map((c) => c.label);
     const headers = [
       "Period",
       "Unit / house no.",
@@ -206,7 +236,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
       "Water",
       "Garbage",
       "Rent",
-      "Extras",
+      ...extraHeaders,
       "Arrears",
       "Total",
       "Paid",
@@ -222,7 +252,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
       l.water_cost,
       l.garbage_fee,
       l.rent_amount,
-      l.extras_total || 0,
+      ...extraCols.map((_, i) => extraOnLine(l, i)),
       l.arrears || 0,
       l.total_due,
       toNum(l.amount_paid as number | string),
@@ -238,7 +268,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
       totals.water_cost || 0,
       totals.garbage_fee || 0,
       totals.rent_amount || 0,
-      totals.extras_total || 0,
+      ...extraCols.map((_, i) => liveLines.reduce((s, l) => s + extraOnLine(l, i), 0)),
       totals.arrears || 0,
       totals.total_due || 0,
       totals.amount_paid || 0,
@@ -281,7 +311,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
       "Water",
       "Garbage",
       "Rent",
-      "Extras",
+      "Charges",
       "Arrears",
       "Total",
       "Paid",
@@ -298,7 +328,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
       l.water_cost,
       l.garbage_fee,
       l.rent_amount,
-      l.extras_total || 0,
+      extrasNamed(l),
       l.arrears || 0,
       l.total_due,
       l.amount_paid,
@@ -376,7 +406,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
           {(statement.extra_charges || []).length > 0 ? (
             <>
               {" "}
-              · Extras:{" "}
+              ·{" "}
               <strong>
                 {(statement.extra_charges || []).map((c) => `${c.label} KSh ${money(c.amount)}`).join(" · ")}
               </strong>
@@ -401,7 +431,11 @@ export default function BillingPage({ params }: { params: { id: string } }) {
               <th className="px-3 py-3">Water</th>
               <th className="px-3 py-3">Garbage</th>
               <th className="px-3 py-3">Rent</th>
-              <th className="px-3 py-3">Extras</th>
+              {extraCols.map((c, i) => (
+                <th key={`${c.label}-${i}`} className="px-3 py-3">
+                  {c.label}
+                </th>
+              ))}
               <th className="px-3 py-3">Arrears</th>
               <th className="px-3 py-3">Total</th>
               <th className="px-3 py-3">Paid</th>
@@ -448,7 +482,11 @@ export default function BillingPage({ params }: { params: { id: string } }) {
                 <td className="px-3 py-2">{money(l.water_cost)}</td>
                 <td className="px-3 py-2">{money(l.garbage_fee)}</td>
                 <td className="px-3 py-2">{money(l.rent_amount)}</td>
-                <td className="px-3 py-2">{money(l.extras_total || 0)}</td>
+                {extraCols.map((c, i) => (
+                  <td key={`${l.unit_id}-${c.label}-${i}`} className="px-3 py-2">
+                    {money(extraOnLine(l, i))}
+                  </td>
+                ))}
                 <td className="px-3 py-2">{money(l.arrears || 0)}</td>
                 <td className="px-3 py-2 font-semibold text-mt-blue">{money(l.total_due)}</td>
                 <td className="px-3 py-2">
@@ -476,7 +514,11 @@ export default function BillingPage({ params }: { params: { id: string } }) {
               <td className="px-3 py-3">{money(totals.water_cost || 0)}</td>
               <td className="px-3 py-3">{money(totals.garbage_fee || 0)}</td>
               <td className="px-3 py-3">{money(totals.rent_amount || 0)}</td>
-              <td className="px-3 py-3">{money(totals.extras_total || 0)}</td>
+              {extraCols.map((c, i) => (
+                <td key={`total-${c.label}-${i}`} className="px-3 py-3">
+                  {money(liveLines.reduce((s, l) => s + extraOnLine(l, i), 0))}
+                </td>
+              ))}
               <td className="px-3 py-3">{money(totals.arrears || 0)}</td>
               <td className="px-3 py-3 text-mt-blue">{money(totals.total_due || 0)}</td>
               <td className="px-3 py-3">{money(totals.amount_paid || 0)}</td>
@@ -567,7 +609,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
                   <th className="px-3 py-2">Period</th>
                   <th className="px-3 py-2">Unit / house no.</th>
                   <th className="px-3 py-2">Tenant</th>
-                  <th className="px-3 py-2">Extras</th>
+                  <th className="px-3 py-2">Charges</th>
                   <th className="px-3 py-2">Arrears</th>
                   <th className="px-3 py-2">Total</th>
                   <th className="px-3 py-2">Paid</th>
@@ -586,7 +628,7 @@ export default function BillingPage({ params }: { params: { id: string } }) {
                       ) : null}
                     </td>
                     <td className="px-3 py-2 text-slate-600">{l.tenant_name || "—"}</td>
-                    <td className="px-3 py-2">{money(l.extras_total || 0)}</td>
+                    <td className="px-3 py-2">{extrasNamed(l)}</td>
                     <td className="px-3 py-2">{money(l.arrears || 0)}</td>
                     <td className="px-3 py-2">{money(l.total_due)}</td>
                     <td className="px-3 py-2">{money(l.amount_paid)}</td>
