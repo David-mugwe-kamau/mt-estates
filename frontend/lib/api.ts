@@ -473,6 +473,7 @@ export interface BillingLine {
   id: number | null;
   unit_id: number;
   unit_number: string;
+  occupancy?: "occupied" | "vacant";
   tenant_id?: number | null;
   tenant_name?: string | null;
   tenant_phone?: string | null;

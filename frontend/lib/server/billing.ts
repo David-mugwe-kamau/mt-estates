@@ -56,25 +56,36 @@ function lineFromReading(
   r: Record<string, unknown>,
   unitNumber: string,
   tenant: { id: number; name: string; phone: string | null } | null,
+  occupancy: "occupied" | "vacant",
 ) {
+  const previous = n(r.previous_reading);
+  const current = n(r.current_reading);
+  const waterUnits = n(r.water_units);
+  const waterCost = n(r.water_cost);
+  const garbage = occupancy === "occupied" ? n(r.garbage_fee) : 0;
+  const rent = occupancy === "occupied" ? n(r.rent_amount) : 0;
+  const arrears = n(r.arrears);
+  const amountPaid = n(r.amount_paid);
+  const totalDue = occupancy === "occupied" ? n(r.total_due) : waterCost;
   return {
     id: r.id as number,
     unit_id: r.unit_id as number,
     unit_number: unitNumber,
+    occupancy,
     tenant_id: tenant?.id ?? null,
     tenant_name: tenant?.name ?? null,
     tenant_phone: tenant?.phone ?? null,
     period: String(r.period),
-    previous_reading: n(r.previous_reading),
-    current_reading: n(r.current_reading),
-    water_units: n(r.water_units),
-    water_cost: n(r.water_cost),
-    garbage_fee: n(r.garbage_fee),
-    rent_amount: n(r.rent_amount),
-    total_due: n(r.total_due),
-    arrears: n(r.arrears),
-    amount_paid: n(r.amount_paid),
-    balance: n(r.balance),
+    previous_reading: previous,
+    current_reading: current,
+    water_units: waterUnits,
+    water_cost: waterCost,
+    garbage_fee: garbage,
+    rent_amount: rent,
+    total_due: totalDue,
+    arrears,
+    amount_paid: amountPaid,
+    balance: arrears + totalDue - amountPaid,
   };
 }
 
@@ -87,8 +98,8 @@ export async function getStatement(user: AuthUser, propertyId: number, period: s
   const garbage = prop.garbage_fee != null ? n(prop.garbage_fee) : 200;
   const prev = prevPeriod(period);
 
-  const units = await db.query<{ id: number; unit_number: string; rent_amount: unknown }>(
-    `SELECT id, unit_number, rent_amount FROM units
+  const units = await db.query<{ id: number; unit_number: string; rent_amount: unknown; status: string }>(
+    `SELECT id, unit_number, rent_amount, status FROM units
      WHERE property_id = $1 AND COALESCE(is_unused, false) = false
      ORDER BY unit_number`,
     [propertyId],
@@ -124,22 +135,25 @@ export async function getStatement(user: AuthUser, propertyId: number, period: s
 
   const lines = [];
   for (const unit of units.rows) {
+    const occupancy = unit.status === "occupied" ? "occupied" : "vacant";
     const tenant = tenantsByUnit.get(unit.id) || null;
     const existing = currentByUnit.get(unit.id);
     if (existing) {
-      lines.push(lineFromReading(existing, unit.unit_number, tenant));
+      lines.push(lineFromReading(existing, unit.unit_number, tenant, occupancy));
       continue;
     }
 
     const last = prevByUnit.get(unit.id);
     const previous = last ? n(last.current_reading) : 0;
     const arrears = last ? n(last.balance) : 0;
-    const rent = n(unit.rent_amount);
-    const totalDue = garbage + rent;
+    const rent = occupancy === "occupied" ? n(unit.rent_amount) : 0;
+    const garbageFee = occupancy === "occupied" ? garbage : 0;
+    const totalDue = garbageFee + rent;
     lines.push({
       id: null,
       unit_id: unit.id,
       unit_number: unit.unit_number,
+      occupancy,
       tenant_id: tenant?.id ?? null,
       tenant_name: tenant?.name ?? null,
       tenant_phone: tenant?.phone ?? null,
@@ -148,7 +162,7 @@ export async function getStatement(user: AuthUser, propertyId: number, period: s
       current_reading: previous,
       water_units: 0,
       water_cost: 0,
-      garbage_fee: garbage,
+      garbage_fee: garbageFee,
       rent_amount: rent,
       total_due: totalDue,
       arrears,
@@ -216,12 +230,18 @@ export async function upsertReadings(
     }
 
     for (const item of data.readings) {
-      const unit = await client.query<{ id: number; unit_number: string; rent_amount: unknown }>(
-        `SELECT id, unit_number, rent_amount FROM units
+      const unit = await client.query<{
+        id: number;
+        unit_number: string;
+        rent_amount: unknown;
+        status: string;
+      }>(
+        `SELECT id, unit_number, rent_amount, status FROM units
          WHERE id = $1 AND property_id = $2 AND COALESCE(is_unused, false) = false`,
         [item.unit_id, propertyId],
       );
       if (!unit.rows[0]) throw new Error(`Unit ${item.unit_id} not found on this property`);
+      const occupied = unit.rows[0].status === "occupied";
 
       const last = await client.query(
         `SELECT current_reading, balance FROM meter_readings WHERE unit_id = $1 AND period = $2`,
@@ -240,8 +260,8 @@ export async function upsertReadings(
 
       const waterUnits = current - previous;
       const waterCost = waterUnits * waterRate;
-      const garbage = garbageDefault;
-      const rent = n(unit.rows[0].rent_amount);
+      const garbage = occupied ? garbageDefault : 0;
+      const rent = occupied ? n(unit.rows[0].rent_amount) : 0;
       const totalDue = waterCost + garbage + rent;
       const arrears = last.rows[0] ? n(last.rows[0].balance) : 0;
 

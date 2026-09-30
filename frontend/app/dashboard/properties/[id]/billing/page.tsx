@@ -88,13 +88,14 @@ export default function BillingPage({ params }: { params: { id: string } }) {
       const current = toNum(l.current_reading as number | string);
       const water_units = Math.max(0, current - previous);
       const water_cost = water_units * rate;
-      const garbage_fee = Number(l.garbage_fee) || 0;
-      const rent_amount = Number(l.rent_amount) || 0;
+      const vacant = l.occupancy === "vacant";
+      const garbage_fee = vacant ? 0 : Number(l.garbage_fee) || 0;
+      const rent_amount = vacant ? 0 : Number(l.rent_amount) || 0;
       const total_due = water_cost + garbage_fee + rent_amount;
       const arrears = Number(l.arrears) || 0;
       const amount_paid = toNum(l.amount_paid as number | string);
       const balance = arrears + total_due - amount_paid;
-      return { ...l, water_units, water_cost, total_due, arrears, balance };
+      return { ...l, water_units, water_cost, garbage_fee, rent_amount, total_due, arrears, balance };
     });
   }, [lines, statement]);
 
@@ -315,7 +316,12 @@ export default function BillingPage({ params }: { params: { id: string } }) {
           <tbody>
             {liveLines.map((l) => (
               <tr key={l.unit_id} className="border-t border-slate-100">
-                <td className="px-3 py-2 font-semibold">{l.unit_number}</td>
+                <td className="px-3 py-2 font-semibold">
+                  {l.unit_number}
+                  {l.occupancy === "vacant" ? (
+                    <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Vacant</span>
+                  ) : null}
+                </td>
                 <td className="px-3 py-2 text-slate-600">
                   {l.tenant_name ? l.tenant_name : <span className="text-slate-300">—</span>}
                 </td>
