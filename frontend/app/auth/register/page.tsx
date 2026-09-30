@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { auth } from "@/lib/api";
 import { saveSession } from "@/lib/auth";
+import { PasswordInput } from "@/components/PasswordInput";
 
 export default function RegisterPage() {
   const [form, setForm] = useState({
@@ -125,27 +126,25 @@ export default function RegisterPage() {
 
           <div>
             <label className="block text-xs font-medium text-slate-600">Password *</label>
-            <input
+            <PasswordInput
               name="password"
-              type="password"
               value={form.password}
               onChange={handleChange}
               required
               placeholder="At least 6 characters"
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-mt-blue focus:outline-none"
+              autoComplete="new-password"
             />
           </div>
 
           <div>
             <label className="block text-xs font-medium text-slate-600">Confirm password *</label>
-            <input
+            <PasswordInput
               name="confirm_password"
-              type="password"
               value={form.confirm_password}
               onChange={handleChange}
               required
               placeholder="Repeat your password"
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-mt-blue focus:outline-none"
+              autoComplete="new-password"
             />
           </div>
 

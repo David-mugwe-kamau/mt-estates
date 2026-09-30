@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { auth } from "@/lib/api";
 import { saveSession } from "@/lib/auth";
+import { PasswordInput } from "@/components/PasswordInput";
 
 export default function LoginPage() {
   const [form, setForm] = useState({ email: "", password: "" });
@@ -78,14 +79,13 @@ export default function LoginPage() {
                 Forgot password?
               </a>
             </div>
-            <input
+            <PasswordInput
               name="password"
-              type="password"
               value={form.password}
               onChange={handleChange}
               required
               placeholder="Your password"
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-mt-blue focus:outline-none"
+              autoComplete="current-password"
             />
           </div>
 
