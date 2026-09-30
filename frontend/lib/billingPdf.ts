@@ -2,7 +2,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { saveAsFile } from "@/lib/saveAsFile";
 
-async function loadLogo(): Promise<{ header: string; watermark: string; w: number; h: number } | null> {
+async function loadLogo(): Promise<{ header: string; w: number; h: number } | null> {
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
       const el = new Image();
@@ -12,25 +12,13 @@ async function loadLogo(): Promise<{ header: string; watermark: string; w: numbe
     });
     const w = Math.min(800, img.naturalWidth || 400);
     const h = Math.round((w * (img.naturalHeight || 1)) / Math.max(1, img.naturalWidth || 1));
-    const header = document.createElement("canvas");
-    header.width = w;
-    header.height = h;
-    const hctx = header.getContext("2d");
-    if (!hctx) return null;
-    hctx.drawImage(img, 0, 0, w, h);
-    const mark = document.createElement("canvas");
-    mark.width = w;
-    mark.height = h;
-    const mctx = mark.getContext("2d");
-    if (!mctx) return null;
-    mctx.globalAlpha = 0.1;
-    mctx.drawImage(img, 0, 0, w, h);
-    return {
-      header: header.toDataURL("image/png"),
-      watermark: mark.toDataURL("image/png"),
-      w,
-      h,
-    };
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0, w, h);
+    return { header: canvas.toDataURL("image/png"), w, h };
   } catch {
     return null;
   }
@@ -77,46 +65,46 @@ export async function downloadPdfTable(
     compress: true,
   });
   const pageW = doc.internal.pageSize.getWidth();
-  const pageH = doc.internal.pageSize.getHeight();
   const logo = await loadLogo();
   const name = (listingName || "Billing").trim();
+  const headerTop = logo ? 28 : 16;
 
   const paintBranding = () => {
     if (logo) {
       const ratio = logo.h / logo.w;
-      const wmW = Math.min(110, pageW * 0.45);
-      const wmH = wmW * ratio;
-      doc.addImage(logo.watermark, "PNG", (pageW - wmW) / 2, (pageH - wmH) / 2, wmW, wmH);
-      const hdW = 28;
+      const hdW = 18;
       const hdH = hdW * ratio;
-      doc.addImage(logo.header, "PNG", (pageW - hdW) / 2, 8, hdW, hdH);
+      doc.addImage(logo.header, "PNG", (pageW - hdW) / 2, 4, hdW, hdH);
     }
     doc.setTextColor(15, 23, 42);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(16);
-    doc.text(name, 14, logo ? 32 : 18, { maxWidth: pageW - 28 });
+    doc.setFontSize(12);
+    doc.text(name, 8, logo ? 22 : 12, { maxWidth: pageW - 16 });
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(11);
-    if (asAt) doc.text(asAt, 14, logo ? 40 : 26);
+    doc.setFontSize(9);
+    if (asAt) doc.text(asAt, 8, logo ? 27 : 17);
   };
 
   autoTable(doc, {
     head: [headers.map((h) => String(h))],
     body: rows.map((row) => row.map((c) => String(c ?? ""))),
-    startY: logo ? 46 : 32,
-    margin: { top: logo ? 46 : 32, left: 10, right: 10, bottom: 12 },
+    startY: headerTop,
+    margin: { top: headerTop, left: 6, right: 6, bottom: 8 },
     styles: {
       font: "helvetica",
-      fontSize: landscape ? 7 : 8,
-      cellPadding: 1.4,
+      fontSize: landscape ? 6 : 7,
+      cellPadding: { top: 0.6, bottom: 0.6, left: 0.8, right: 0.8 },
       overflow: "linebreak",
       valign: "middle",
+      lineWidth: 0.1,
+      minCellHeight: 4,
     },
     headStyles: {
       fillColor: [0, 91, 142],
       textColor: 255,
       fontStyle: "bold",
-      fontSize: landscape ? 7 : 8,
+      fontSize: landscape ? 6 : 7,
+      cellPadding: { top: 0.8, bottom: 0.8, left: 0.8, right: 0.8 },
     },
     footStyles: {
       fillColor: [241, 245, 249],
